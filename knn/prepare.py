@@ -2,166 +2,117 @@ import os
 import json
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 
-def read_jsonl(file_path):
-    """Lê um arquivo .jsonl e retorna uma lista de dicionários."""
-    data = []
-    with open(file_path, 'r') as file:
-        for line in file:
-            data.append(json.loads(line))
-    return data
-
-def read_json(file_path):
-    """Lê um arquivo .json e retorna o conteúdo como um dicionário."""
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-    return data
-
-
-def extract_dash_features(dash_data, file_path):
-    """Extrai as features 'mean_rate', 'std_rate' e outras variáveis das medições DASH."""
-    # As primeiras 15 linhas contêm os dados das requisições individuais
-    requests_data = dash_data[:-1]  # Todas as linhas exceto a última
-    summary_data = dash_data[-1]    # Última linha contém o resumo
-
-    rates = []
-    connect_times = []
-    elapsed_times = []
-    received_data = []
-
-    for req in requests_data:
-        rates.append(req['rate'])
-        connect_times.append(req['connect_time'])
-        elapsed_times.append(req['elapsed'])
-        received_data.append(req['received'])
-
-    # Extraindo features a partir dos dados das requisições individuais
-    features = {
-        'mean_rate': np.mean(rates),
-        'std_rate': np.std(rates),
-        'mean_connect_time': np.mean(connect_times),
-        'std_connect_time': np.std(connect_times),
-        'mean_elapsed_time': np.mean(elapsed_times),
-        'std_elapsed_time': np.std(elapsed_times),
-        'total_received': np.sum(received_data),
-    }
-
-    # Adicionando features a partir do resumo final
-    try:
-        ticks = [item['ticks'] for item in summary_data]
-        summary_features = {
-            'mean_ticks': np.mean(ticks),
-            'std_ticks': np.std(ticks),
-            'max_ticks': np.max(ticks),
-            'min_ticks': np.min(ticks),
-        }
-        # Combinando ambas as partes de features
-        features.update(summary_features)
-    except:
-        print(f"Arquivo com defeito: {file_path}")
-    
+def reduce_features_to_60(features):
+    while len(features) > 60:
+        if len(features) - 60 >= 3:
+            aggregated_features = [np.mean(features[i:i+3]) for i in range(0, len(features) - 2, 3)]
+            remaining_features = features[len(aggregated_features) * 3:]
+            features = aggregated_features + remaining_features
+        else:
+            remaining_count = len(features) - 60
+            features[-(remaining_count + 1):] = [np.mean(features[-(remaining_count + 1):])]
     return features
 
-def process_dash_data(root_dir):
-    """Processa todos os arquivos .jsonl de DASH, extraindo as features."""
-    all_features = []
-    # raise Exception(root_dir)
-    for subdir, _, files in os.walk(root_dir):
-        for file in files:
-            if file.endswith(".jsonl"):
-                file_path = os.path.join(subdir, file)
-                dash_data = read_jsonl(file_path)
-                features = extract_dash_features(dash_data, file_path)
-                all_features.append(features)
-    return pd.DataFrame(all_features)
+def extract_features(json_data, filename):
+    dash_data = json_data['dash']
+    rtt_data = json_data['rtt']
+    traceroute_data = json_data['traceroute']
+    
+    features = []
+    feature_names = []
 
-# def extract_rtt_features(rtt_data):
-#     """Extrai features relevantes dos dados de RTT."""
-#     features = []
-#     for measurement in rtt_data:
-#         values = [float(k) * v for k, v in measurement['val'].items()]
-#         rtt_mean = np.mean(values)
-#         rtt_std = np.std(values)
-#         features.append({
-#             'rtt_mean': rtt_mean,
-#             'rtt_std': rtt_std,
-#         })
-#     return features
+    # Extract DASH features
+    for i, dash in enumerate(dash_data):
+        if dash['rate']:
+            features.extend([
+                np.mean(dash['rate']) if dash['rate'] else np.nan,
+                np.std(dash['rate']) if dash['rate'] else np.nan,
+                np.mean(dash['elapsed']) if dash['elapsed'] else np.nan,
+                np.std(dash['elapsed']) if dash['elapsed'] else np.nan,
+                np.mean(dash['received']) if dash['received'] else np.nan,
+                np.std(dash['received']) if dash['received'] else np.nan
+            ])
+            feature_names.extend([
+                f'dash{i}_mean_rate',
+                f'dash{i}_std_rate',
+                f'dash{i}_mean_elapsed',
+                f'dash{i}_std_elapsed',
+                f'dash{i}_mean_received',
+                f'dash{i}_std_received'
+            ])
 
-# def process_rtt_data(root_dir):
-#     """Processa todos os arquivos .json de RTT, extraindo as features."""
-#     all_features = []
-#     for subdir, _, files in os.walk(root_dir):
-#         for file in files:
-#             if file.endswith(".json"):
-#                 file_path = os.path.join(subdir, file)
-#                 rtt_data = read_json(file_path)
-#                 features = extract_rtt_features(rtt_data)
-#                 all_features.extend(features)
-#     return pd.DataFrame(all_features)
+    # Extract RTT features
+    for i, rtt in enumerate(rtt_data):
+        rtt_values = np.array(list(map(float, rtt['val'].keys())))
+        if len(rtt_values) > 0:
+            rtt_counts = np.array(list(rtt['val'].values()))
+            rtt_avg = np.dot(rtt_values, rtt_counts) / rtt_counts.sum()
+            features.extend([rtt_avg, np.std(rtt_values)])
+            feature_names.extend([f'rtt{i}_avg', f'rtt{i}_std'])
+        else:
+            features.extend([np.nan, np.nan])
+            feature_names.extend([f'rtt{i}_avg', f'rtt{i}_std'])
 
-# def extract_traceroute_features(traceroute_data):
-#     """Extrai features relevantes dos dados de Traceroute."""
-#     features = []
-#     for measurement in traceroute_data:
-#         hops = len(measurement['val'])
-#         rtt_values = [hop['rtt'] for hop in measurement['val'] if 'rtt' in hop]
-#         mean_rtt = np.mean(rtt_values) if rtt_values else 0
-#         std_rtt = np.std(rtt_values) if rtt_values else 0
-#         features.append({
-#             'hops': hops,
-#             'mean_rtt': mean_rtt,
-#             'std_rtt': std_rtt,
-#         })
-#     return features
+    # Extract Traceroute features
+    for i, trace in enumerate(traceroute_data):
+        traceroute_rtts = [hop['rtt'] for hop in trace['val'] if 'rtt' in hop]
+        features.extend([
+            np.mean(traceroute_rtts) if traceroute_rtts else np.nan,
+            np.std(traceroute_rtts) if traceroute_rtts else np.nan
+        ])
+        feature_names.extend([f'traceroute{i}_mean_rtt', f'traceroute{i}_std_rtt'])
 
-# def process_traceroute_data(root_dir):
-#     """Processa todos os arquivos .json de Traceroute, extraindo as features."""
-#     all_features = []
-#     for subdir, _, files in os.walk(root_dir):
-#         for file in files:
-#             if file.endswith(".json"):
-#                 file_path = os.path.join(subdir, file)
-#                 traceroute_data = read_json(file_path)
-#                 features = extract_traceroute_features(traceroute_data)
-#                 all_features.extend(features)
-#     return pd.DataFrame(all_features)
+    if len(features) >= 60:
+        features = reduce_features_to_60(features)
+        feature_names = feature_names[:60]  # Ensure the names list matches the reduced features
+    else:
+        print(f"Skipping {filename}: expected at least 60 features, got {len(features)}")
+        return None, None
 
-# def combine_features(dash_df, rtt_df, traceroute_df):
-#     """Combina as features de DASH, RTT e Traceroute em um único DataFrame."""
-#     combined_df = pd.concat([dash_df, rtt_df, traceroute_df], axis=1)
-#     combined_df = combined_df.fillna(0)  # Preenche valores faltantes com 0
-#     return combined_df
+    return features, feature_names
 
-def normalize_data(df):
-    """Normaliza os dados usando StandardScaler."""
-    scaler = StandardScaler()
-    return pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
+def load_and_prepare_data(base_dir):
+    all_data = []
+    all_feature_names = None
 
-def save_to_csv(df, filename):
-    """Salva o DataFrame em um arquivo .csv."""
-    df.to_csv(filename, index=False)
+    for client_dir in os.listdir(base_dir):
+        client_path = os.path.join(base_dir, client_dir)
+        for server_dir in os.listdir(client_path):
+            server_path = os.path.join(client_path, server_dir)
+            for timestamp_dir in os.listdir(server_path):
+                path = os.path.join(server_path, timestamp_dir)
+                json_file = os.path.join(path, "input.json")
+                csv_file = os.path.join(path, "result.csv")
+                
+                with open(json_file, 'r') as f:
+                    json_data = json.load(f)
+                
+                result_data = pd.read_csv(csv_file)
+                features, feature_names = extract_features(json_data, json_file)
+                if features is not None:
+                    if all_feature_names is None:
+                        all_feature_names = feature_names  # Set once from the first valid extraction
+                    output = result_data.iloc[0, 1:].values  # mean_1, stdev_1, mean_2, stdev_2
+                    all_data.append(features + list(output))
+
+    return all_data, all_feature_names
+
+def save_prepared_data_to_csv(all_data, feature_names, output_csv):
+    columns = feature_names + ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+    data_df = pd.DataFrame(all_data, columns=columns)
+    data_df.dropna(inplace=True)  # Remove qualquer linha com NaN
+    data_df.to_csv(output_csv, index=False)
 
 def main():
-    """Função principal que coordena o fluxo de execução do script."""
-    cwd = os.getcwd()
+    base_dir = os.path.join(os.getcwd(), "..", "converted_input") 
+    output_csv = "prepared_data.csv"
 
-    # Processar dados de treinamento
-    dash_df = process_dash_data(f"{cwd}/../dataset/Train/dash")
-    # rtt_df = process_rtt_data("../dataset/Train/rtt")
-    # traceroute_df = process_traceroute_data("../dataset/Train/traceroute")
+    all_data, feature_names = load_and_prepare_data(base_dir)
+    print(f"Total de amostras preparadas: {len(all_data)}")
 
-    if dash_df.empty: # or rtt_df.empty or traceroute_df.empty:
-        raise ValueError("Nenhuma feature foi extraída. Verifique o formato dos dados de entrada.")
-
-    # combined_df = combine_features(dash_df, rtt_df, traceroute_df)
-    # combined_df = normalize_data(combined_df)
-
-    normalized_df = normalize_data(dash_df)
-
-    save_to_csv(normalized_df, f"{cwd}/train_data.csv")
+    save_prepared_data_to_csv(all_data, feature_names, output_csv)
+    print(f"Dados de treinamento salvos em {output_csv}")
 
 if __name__ == "__main__":
     main()
-    

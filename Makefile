@@ -14,16 +14,15 @@ install: $(VENV)/bin/activate
 
 # KNN
 prepare_knn: install
-	ALG := knn
-	$(VENV)/bin/python ./$(ALG)/prepare.py
+	$(VENV)/bin/python ./knn/prepare.py
 
 learn_knn: install
 	ALG := knn
-	$(VENV)/bin/python ./$(ALG)/learn.py
+	$(VENV)/bin/python ./knn/learn.py
 
 eval_knn: install
 	ALG := knn
-	$(VENV)/bin/python ./$(ALG)/eval.py
+	$(VENV)/bin/python ./knn/eval.py
 
 # Clean up the virtual environment
 clean:
