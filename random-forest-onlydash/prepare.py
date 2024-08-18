@@ -9,8 +9,9 @@ CLIENTS = {"ba": 0, "rj": 1}
 SERVERS = {"ce": 0, "df": 0.33, "es": 0.66, "pi": 1}
 
 CONSIDER_CLIENT_SERVER = 1
-WEIGHT_LAST_DATA = 1.5
+WEIGHT_LAST_DATA = 1
 NORMALIZE = 0
+ONLY_RATE = 0
 
 def extract_dash_features(dash_data, filename):
     """
@@ -38,12 +39,15 @@ def extract_dash_features(dash_data, filename):
             print(f"Invalid receiveds for {filename}")
             return None
 
-        dash_features.append([
-            np.mean(elapseds) + np.std(elapseds),
-            np.mean(ticks) + np.std(ticks),
-            np.mean(rates) + np.std(rates),
-            np.mean(receiveds) + np.std(receiveds)
-        ])
+        if ONLY_RATE:
+            dash_features.append([np.mean(rates) + np.std(rates)])
+        else:
+            dash_features.append([
+                np.mean(elapseds) + np.std(elapseds),
+                np.mean(ticks) + np.std(ticks),
+                np.mean(rates) + np.std(rates),
+                np.mean(receiveds) + np.std(receiveds)
+            ])
     return dash_features
 
 def process_json_and_csv(json_file, csv_file):
@@ -130,12 +134,15 @@ def save_to_csv(all_data, output_csv):
     if CONSIDER_CLIENT_SERVER:
         columns = ['client_id', 'server_id']
     for i in range(10):
-        columns.extend([
-            f'dash{i}_elapsed',
-            f'dash{i}_ticks',
-            f'dash{i}_rate',
-            f'dash{i}_received'
-        ])
+        if ONLY_RATE:
+            columns.extend([f'dash{i}_rate'])
+        else:
+            columns.extend([
+                f'dash{i}_elapsed',
+                f'dash{i}_ticks',
+                f'dash{i}_rate',
+                f'dash{i}_received'
+            ])
     # Adicionar as colunas dos resultados esperados
     columns.extend(['mean_1', 'stdev_1', 'mean_2', 'stdev_2'])
 
