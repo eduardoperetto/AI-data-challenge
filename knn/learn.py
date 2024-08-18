@@ -16,7 +16,7 @@ def load_data_from_csv(input_csv):
     return X_scaled, y, scaler
 
 def train_knn(X, y):
-    max_n_neighbors = min(11, len(X))
+    max_n_neighbors = min(10, len(X))
 
     knn = KNeighborsRegressor()
     param_grid = {'n_neighbors': list(range(3, max_n_neighbors + 1))}

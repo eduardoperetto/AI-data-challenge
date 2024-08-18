@@ -1,0 +1,16 @@
+# A partir do JSON de input, como gerar um CSV de entrada pro KNN?
+
+Para cada ArqJSON em converted_input
+    MedidasDash = []
+
+    Para cada MedicaoDash no ArqJSON
+        Calcula mean e stdev de elapsed, request_ticks, rate e received
+        Adciona objeto com medidas em MedidasDash
+    Se len(MedidasDash) < 10
+        Printa erro e desconsidera esse ArqJSON
+    Enquanto MedidasDash for maior que 10
+        Descarta primeiro elemento (mais antigo) de MedidasDash
+    Assert(len(MedidasDash) == 10)
+
+    Gera CSV com as seguintes colunas: # (2 + 8*10 = 82 colunas)
+        client_id,server_id,dash0_elapsed_mean,dash0_elapsed_stdev,dash0_ticks_mean,dash0_ticks_stdev,dash0_rate_mean,dash0_rate_stdev,dash0_received_mean,dash0_received_stdev, # repete para dash de 0 a 9
