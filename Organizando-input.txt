@@ -1,0 +1,59 @@
+CLIENTS = ["ba", rj"]
+SERVERS = ["ce", df", "es", "pi"]
+
+Para cada par client-server
+
+    FOLDER_DASH = "../dataset/Train/{client}/{server}" 
+    TodosArquivos = todos os arquivos dentro da pasta daquele par client-server
+
+    TIME_0 = data hora do primeiro arquivo na pasta (está no nome do arquivo)
+    PrimeiroArqDash = primeiro arquivo DASH
+
+    Enquanto houver arquivos na pasta
+
+        arquivos_atuais = []
+
+        Para cada Arquivo em TodosArquivos
+            Se DataHora do Arquivo for maior que (TIME_0 + 1 hora)
+                Break
+            Senao
+                Remove arquivo de TodosArquivos
+                arquivos_atuais += Arquivo
+
+        TIME_F = data e hora do ultimo arquivo em arquivos
+
+        measures_dash = []
+
+        Para cada Arquivo em Arquivos
+            measures += objeto com lista de elapsed, lista de request_ticks, lista de rate, lista de received e lista de timestamp
+
+        LAST_2 = dois últimas measures da lista de measures
+        Remover esses dois últimos measures da lista de measures
+
+        measures_rtt = []
+
+        Abrir o arquivo de RTT daquele par client-server
+            Para cada measure cujo timestamp esteja entre T_0 e T_F (vai precisar converter dateTime para Timestamp)
+                measures_rtt += measure
+
+        measures_traceroute = []
+        Abrir o arquivo de TraceRoute daquele par client-server
+            Para cada measure cujo timestamp esteja entre T_0 e T_F
+                measures_traceroute += measure
+        
+        Resultado = Calcular mean_1 (média do rate do primeiro elemento), stdev_1 (desvio padrão do rate do primeiro elemento), mean_2 e stdev_2 a partir de LAST_2
+
+        Criar uma pasta cujo nome seja o datetime de TS_0, e colocar nela:
+           Arquivo JSON input.json gerado da seguinte maneira:
+                {
+                    "id": gerar_uuid(),
+                    "cliente": client,
+                    "servidor": server,
+                    "dash": measures_dash,
+                    "rtt": measures_rtt,
+                    "traceroute": measures_traceroute
+                }
+            um arquivo CSV result.csv, gerado da seguinte maneira:
+                id,mean_1,stdev_1,mean_2,stdev_2 (calculados no Resultado)
+
+        TS_0 = Timestamp do proximo arquivo DASH após LAST_2

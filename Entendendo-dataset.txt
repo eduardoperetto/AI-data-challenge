@@ -1,0 +1,68 @@
+Problema
+	selecionar melhor servidor para prover um conteúdo em resposta à requisição de um cliente
+
+Depende de fatores 
+	estado de congestionamento da rede
+	o que a definição de “melhor qualidade” significa para os clientes
+	
+Objetivo geral
+	prever o comportamento da rede em diversas granularidades
+	prever métricas de rede, entre um cliente e um servidor
+	relacionadas à qualidade de experiência do cliente ao consumir vídeos 
+	
+Dataset
+	Treinamento
+		Dados coletados etnre 06/06 e 20/06
+	Teste
+		Dados entre 22/6 e 01/07
+	2 CLIENTES (BA e RJ) comunicam com 4 SERVIDORES (CE, DF, ES, PI)
+	
+	DASH
+		métricas de Cliente --> Servidor
+		Reprodutor de streaming
+		a cada 5 min, 15 requisições
+		Cada arquivo representa as 15 requisições feitas, intervalados em 5 minutos
+		Nome do arq. contém data e hora de quando foram iniciadas, e pasta contém qual o par client-server.
+		
+		Dados relevantes
+			iteration: 0 a 14, qual requisição se trata
+			timestamp pra cada requisição
+			connect_time: time required by connect() to complete, which can be an approximation of the minimum RTT, measured in seconds.
+			elapsed: time elapsed since before sending the HTTP request for the segment until the HTTP response body is fully received, measured in seconds.
+			rate: bitrate of the segment (in kbit/s), i.e. video quality.
+			received: number of bytes received.
+		No final, resumo com ticks e timestamps (aparentemente irrelevante)
+		
+	RTT
+		Originados do MonIPE
+		Round-Trip Time entre clientes e servidores (tempo total ida e volta da req)
+		Nome do arq. contém qual é o par client-server
+		Dados relevantes
+			timestamp (inicio)
+			val (10 medições)
+				Histograma de 10 RTTs (em ms)
+				Significa quantas dessas 10 requisições foram finalizadas aprox. naquele valor chave em ms
+			
+	Traceroute
+		Originados do MonIPE
+		Ponto de vista do SERVER respondendo uma requisição
+		Dados
+			timestamp (inicio)
+			val (sequencia de interfaces visitadas e suas medições)
+				 ttl: time to live, index da subrota naquela req
+				 query: Sempre 1, ignorar
+				 success: se foi bem sucedido ou nao. Sempre 1. Ignorar.
+				 hostname: nome da subrota visitada (podemos relacionar aqui com os outros datasets?)
+				 rtt: roundtrip time daquela subrota
+				 
+Desafio
+	Entrada
+		Um par Client-Server
+		para um intervalo de tempo [ti, tf]
+			Conjunto de medidas DASH
+			Medidas RTT
+			Medidas Traceroute
+	Saída	
+		Prever a média e o desvio padrão do `rate` (bitrate) nas requisições de DASH p/ as 2 próximas medições
+			i.e.: id_teste --> mean_1, stdev_1, mean_2, stdev_2
+	

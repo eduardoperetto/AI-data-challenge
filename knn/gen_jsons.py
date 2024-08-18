@@ -1,0 +1,138 @@
+import os
+import json
+import uuid
+from datetime import datetime, timedelta
+import csv
+
+# Configurações iniciais
+CLIENTS = ["ba", "rj"]
+SERVERS = ["ce", "df", "es", "pi"]
+
+def parse_filename_to_datetime(filename):
+    """Extrai a data e hora do nome do arquivo."""
+    date_str, time_str = filename.removesuffix(".jsonl").split('_')
+    return datetime.strptime(date_str + time_str, "%y%m%d%H%M")
+
+def load_jsonl_file(filepath):
+    """Carrega e retorna todos os registros de um arquivo JSONL."""
+    with open(filepath, 'r') as file:
+        return [json.loads(line) for line in file]
+
+def load_json_file(filepath):
+    """Carrega e retorna o conteúdo de um arquivo JSON."""
+    with open(filepath, 'r') as file:
+        return json.load(file)
+
+def extract_measures(files, base_path):
+    """Extrai as medidas DASH a partir de uma lista de arquivos JSONL."""
+    measures = []
+    for file in files:
+        filepath = os.path.join(base_path, file)
+        dash_data = load_jsonl_file(filepath)
+        measures.append({
+            "elapsed": [req["elapsed"] for req in dash_data[:-1]],
+            "request_ticks": [req["request_ticks"] for req in dash_data[:-1]],
+            "rate": [req["rate"] for req in dash_data[:-1]],
+            "received": [req["received"] for req in dash_data[:-1]],
+            "timestamp": [req["timestamp"] for req in dash_data[:-1]]
+        })
+    return measures
+
+def filter_rtt_traceroute(measures, data, start_ts, end_ts):
+    """Filtra as medições de RTT ou traceroute para estar dentro do intervalo de tempo."""
+    filtered_data = [measure for measure in data if start_ts <= measure["ts"] <= end_ts]
+    return filtered_data
+
+def calculate_statistics(measures):
+    """Calcula mean e std dev das duas últimas medições."""
+    last_2 = measures[-2:]
+    mean_1 = sum(last_2[0]["rate"]) / len(last_2[0]["rate"])
+    stdev_1 = (sum((x - mean_1) ** 2 for x in last_2[0]["rate"]) / len(last_2[0]["rate"])) ** 0.5
+    mean_2 = sum(last_2[1]["rate"]) / len(last_2[1]["rate"])
+    stdev_2 = (sum((x - mean_2) ** 2 for x in last_2[1]["rate"]) / len(last_2[1]["rate"])) ** 0.5
+    return mean_1, stdev_1, mean_2, stdev_2
+
+def generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, result, output_folder):
+    """Gera os arquivos JSON e CSV com os resultados."""
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Gerar arquivo JSON
+    json_data = {
+        "id": str(uuid.uuid4()),
+        "cliente": client,
+        "servidor": server,
+        "dash": measures_dash,
+        "rtt": measures_rtt,
+        "traceroute": measures_traceroute
+    }
+    
+    with open(os.path.join(output_folder, 'input.json'), 'w') as json_file:
+        json.dump(json_data, json_file, indent=4)
+    
+    # Gerar arquivo CSV
+    csv_file_path = os.path.join(output_folder, 'result.csv')
+    with open(csv_file_path, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["id", "mean_1", "stdev_1", "mean_2", "stdev_2"])
+        writer.writerow([json_data["id"], *result])
+
+def process_client_server(client, server, base_dash_path, rtt_data, traceroute_data):
+    """Processa todos os arquivos de um par client-server."""
+    dash_folder = os.path.join(base_dash_path, client, server)
+    all_files = sorted(os.listdir(dash_folder))
+    
+    time_0 = parse_filename_to_datetime(all_files[0])
+    
+    while all_files:
+        current_files = []
+        for filename in all_files:
+            file_datetime = parse_filename_to_datetime(filename)
+            if file_datetime > time_0 + timedelta(hours=1):
+                break
+            current_files.append(filename)
+        
+        for filename in current_files:
+            all_files.remove(filename)
+
+        if len(current_files) < 3:
+            break
+        
+        time_f = parse_filename_to_datetime(current_files[-1])
+
+        measures_dash = extract_measures(current_files, dash_folder)
+
+        last_2_measures = measures_dash[-2:]
+        measures_dash = measures_dash[:-2]
+
+        start_ts = time_0.timestamp()
+        end_ts = time_f.timestamp()
+
+        measures_rtt = filter_rtt_traceroute(measures_dash, rtt_data, start_ts, end_ts)
+        measures_traceroute = filter_rtt_traceroute(measures_dash, traceroute_data, start_ts, end_ts)
+
+        result = calculate_statistics(last_2_measures)
+
+        output_folder = os.path.join(os.getcwd(), "output", f"{time_0.strftime('%Y%m%d_%H%M')}_{client}_{server}")
+        print(output_folder)
+        generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, result, output_folder)
+        
+        if all_files:
+            time_0 = parse_filename_to_datetime(all_files[0])
+
+def main():
+    base_dash_path = "../dataset/Train/dash"
+    rtt_path = "../dataset/Train/rtt"
+    traceroute_path = "../dataset/Train/traceroute"
+
+    for client in CLIENTS:
+        for server in SERVERS:
+            rtt_file = os.path.join(rtt_path, client, f"measure-rtt_ref-{client}_pop-{server}.json")
+            traceroute_file = os.path.join(traceroute_path, client, f"measure-traceroute_ref-{client}_pop-{server}.json")
+            
+            rtt_data = load_json_file(rtt_file)
+            traceroute_data = load_json_file(traceroute_file)
+
+            process_client_server(client, server, base_dash_path, rtt_data, traceroute_data)
+
+if __name__ == "__main__":
+    main()
