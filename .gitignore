@@ -1,6 +1,8 @@
 */output
 converted_input
 *.pkl
+*/eval
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
