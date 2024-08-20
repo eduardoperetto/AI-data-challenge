@@ -37,7 +37,7 @@ def save_predictions(data_df, eval_dir):
     print(f"Arquivo salvo em: {eval_csv_path}")
 
 def main():
-    input_csv = "prepared_data.csv"
+    input_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../converted_input")
     eval_dir = "eval"
     
     # Carregar dados do CSV

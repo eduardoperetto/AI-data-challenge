@@ -121,8 +121,8 @@ def collect_files_for_time_window(all_files, start_time, time_window):
             break
         current_files.append(filename)
     
-    for filename in current_files:
-        all_files.remove(filename)
+    for i in range(int(len(current_files)/2)):
+        all_files.remove(current_files[i])
     
     return current_files
 
