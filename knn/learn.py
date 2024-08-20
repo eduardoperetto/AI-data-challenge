@@ -6,7 +6,7 @@ from sklearn.metrics import mean_absolute_percentage_error
 import joblib
 import os
 
-USING_RESULT_AS_DIFF=False
+USING_RESULT_AS_DIFF = True
 
 def load_data_from_csv(input_csv):
     data_df = pd.read_csv(input_csv)

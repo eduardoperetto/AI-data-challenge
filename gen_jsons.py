@@ -3,10 +3,13 @@ import json
 import uuid
 from datetime import datetime, timedelta
 import csv
+import shutil  # Import shutil to handle folder deletion
 
 # Configurações iniciais
 CLIENTS = ["ba", "rj"]
 SERVERS = ["ce", "df", "es", "pi"]
+
+INTERSECT_DASH_DATA = True
 
 def parse_filename_to_datetime(filename):
     """Extrai a data e hora do nome do arquivo."""
@@ -121,7 +124,12 @@ def collect_files_for_time_window(all_files, start_time, time_window):
             break
         current_files.append(filename)
     
-    for i in range(int(len(current_files)/2)):
+    if INTERSECT_DASH_DATA:
+        range_to_del = int(len(current_files)/2)
+    else:
+        range_to_del = int(len(current_files))
+
+    for i in range(range_to_del):
         all_files.remove(current_files[i])
     
     return current_files
@@ -131,6 +139,12 @@ def main():
     rtt_path = "./dataset/Train/rtt"
     traceroute_path = "./dataset/Train/traceroute"
 
+    # Remove the converted_input folder if it exists
+    converted_input_path = os.path.join(os.getcwd(), "converted_input")
+    if os.path.exists(converted_input_path):
+        print("Removed old converted_inputs folder")
+        shutil.rmtree(converted_input_path)
+
     for client in CLIENTS:
         for server in SERVERS:
             rtt_file = os.path.join(rtt_path, client, f"measure-rtt_ref-{client}_pop-{server}.json")
@@ -139,6 +153,8 @@ def main():
             traceroute_data = load_json_file(traceroute_file)
 
             process_files(client, server, base_dash_path, rtt_data, traceroute_data)
+
+    print(f"Generated successfully on {converted_input_path}")
 
 if __name__ == "__main__":
     main()

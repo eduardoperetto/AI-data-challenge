@@ -6,7 +6,7 @@ from sklearn.metrics import mean_absolute_percentage_error
 import joblib
 import os
 
-USING_RESULT_AS_DIFF = False
+USING_RESULT_AS_DIFF = True
 
 def load_data_from_csv(input_csv):
     data_df = pd.read_csv(input_csv)
@@ -29,7 +29,7 @@ def train_random_forest(X_train, y_train):
         'n_estimators': [50, 100, 200],
         'max_depth': [None, 10, 20, 30],
         'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4]
+        'min_samples_leaf': [1, 2, 4, 10]
     }
     grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=1)
     

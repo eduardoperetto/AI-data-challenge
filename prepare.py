@@ -10,23 +10,20 @@ SERVERS = {"ce": 0, "df": 0.33, "es": 0.66, "pi": 1}
 
 CONSIDER_CLIENT_SERVER = True # Adicionar cliente e servidor como features
 WEIGHT_LAST_DATA = 1 # Multiplicar valores mais recentes (deprecated)
-NORMALIZE = False # Aplicar normalizaçao
-ONLY_RATE = True # Descartar todos os dados de DASH que nao sejamos de Rate
+NORMALIZE = False # Aplicar normalização
+ONLY_RATE = True # Descartar todos os dados de DASH que nao sejam de Rate
 USE_TRACEROUTES = True # Usar dados de Traceroute
-DISCARD_FILES_WO_TR = False # Descarta todos os arquivos que NÃO tem TraceRoute
-DISCARD_FILES_W_TR = False # Descarta todos os arquivos que TEM TraceRoute
-USE_DIFF = False # Em vez de usar o valor bruto nas medicoes DASH, usar a diferença entre o atual e o anterior
+DISCARD_FILES_WO_TR = True # Descarta todos os arquivos que NÃO têm TraceRoute
+DISCARD_FILES_W_TR = False # Descarta todos os arquivos que têm TraceRoute
+USE_DIFF = False # Em vez de usar o valor bruto nas medições DASH, usar a diferença entre o atual e o anterior
 EMA_ALPHA = 1  # Fator de suavização para o EMA (1 significa sem EMA)
-ADD_MEAN_VALUES = True # Adiciona como features as média dos valores de rate_mean e rate_std
-RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferenca em relacao a media (NECESSARIO USAR ADD_MEAN_VALUES)
+ADD_MEAN_VALUES = False # Adiciona como features as médias dos valores de rate_mean e rate_std
+RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferença em relação à média (NECESSÁRIO USAR ADD_MEAN_VALUES)
 
-EVALUATING = False # Ative isso quando apontar pra dados de teste pra gerar submissao
-
-all_rates_mean = []
-all_rates_std = []
+EVALUATING = False # Ative isso quando apontar para dados de teste para gerar submissão
 
 def calc_diff(current, previous):
-    return current-previous
+    return current - previous
 
 def calculate_ema_difference(current, previous, alpha=EMA_ALPHA):
     """
@@ -47,40 +44,27 @@ def extract_dash_features(dash_data, filename):
     as 4 features combinadas utilizando a diferença EMA entre medições consecutivas.
     """
     dash_features = []
-
     previous_ema = None  # Inicializar a variável para armazenar a EMA anterior
-
-    current_rates_mean = []
-    current_rates_std = []
     
     for dash in dash_data:
-        elapseds = dash['elapsed']
-        ticks = dash['request_ticks']
         rates = dash['rate']
-        receiveds = dash['received']
 
-        if not elapseds or not ticks or not rates or not receiveds:
+        if not rates:
             print(f"Invalid data for {filename}")
             return None
 
         # Calcula as médias das medições atuais
-        current_features = [np.mean(rates), np.std(rates),]
-
-        rate_mean = np.mean(rates)
-        rate_std = np.std(rates)
+        current_features = [np.mean(rates), np.std(rates)]
 
         if not ONLY_RATE:
+            elapseds = dash['elapsed']
+            ticks = dash['request_ticks']
+            receiveds = dash['received']
             current_features += [
-                rate_mean,
-                rate_std,
                 np.mean(elapseds),
                 np.mean(ticks),
                 np.mean(receiveds)
             ]
-
-        # Isso aqui nao é a media das medias. Vai se tornar a media de todas as medidas, o que é diferente
-        current_rates_mean.append(rate_mean)
-        current_rates_std.append(rate_std)
 
         if previous_ema is None:
             # Se for a primeira medição, inicializa o EMA com os valores atuais
@@ -93,11 +77,6 @@ def extract_dash_features(dash_data, filename):
         
         dash_features.append(features)
         previous_ema = features  # Atualiza o EMA anterior para a próxima iteração
-    
-    current_rates_mean = current_rates_mean[-10:]
-    current_rates_std = current_rates_std[-10:]
-    all_rates_mean.append(np.mean(current_rates_mean))
-    all_rates_std.append(np.mean(current_rates_std))
 
     dash_features = dash_features[-10:]
     return dash_features
@@ -125,7 +104,7 @@ def extract_tr_features(tr_data, filename):
                     continue
             rtt_mean = np.mean(rtt_values)
             rtt_std_dev = np.std(rtt_values)
-            tr_features += [jump_count,rtt_mean,rtt_std_dev]
+            tr_features += [jump_count, rtt_mean, rtt_std_dev]
         except:
             return None if DISCARD_FILES_WO_TR else 15 * [0]
     
@@ -182,24 +161,16 @@ def process_json_and_csv(json_file, csv_file):
     if traceroute_features is None:
         return None
 
-    result_values = []
-
-    rate_avgs=[]
-    if ADD_MEAN_VALUES:
-        mean_from_means = sum(all_rates_mean) / len(all_rates_mean)
-        mean_from_stds = sum(all_rates_std) / len(all_rates_std)
-        rate_avgs = [mean_from_means, mean_from_stds]
+    # Merge
+    # Ordem: ID, Client, Server, Dashes, Avgs, TRs
+    row = row + dash_features_flat + traceroute_features
 
     if not EVALUATING:
         # Ler o arquivo result.csv e colocar resultados calculados
         result_data = pd.read_csv(csv_file)
         result_values = result_data.iloc[0, 1:].values.tolist()  # mean_1, stdev_1, mean_2, stdev_2
-        if RESULT_TO_DIFF_FROM_AVG:
-            result_values = [value - avg for value, avg in zip(result_values, 2 * rate_avgs)]
+        row = row + result_values
 
-    # Merge
-    # Ordem: ID, Client, Server, Dashes, Avgs, TRs, Results
-    row = row + dash_features_flat + rate_avgs + traceroute_features + result_values
     return row
 
 def process_all_files(base_dir):
@@ -279,6 +250,14 @@ def save_to_csv(all_data, output_csv):
     except Exception as e:
         print(f"Columns: {build_columns()}")
         raise e
+
+    if RESULT_TO_DIFF_FROM_AVG:
+        # Calcular a média das colunas de rate_mean e rate_stdev
+        rate_means = [col for col in data_df.columns if 'dash' in col and 'rate_mean' in col]
+        rate_stdevs = [col for col in data_df.columns if 'dash' in col and 'rate_stdev' in col]
+
+        data_df['rates_mean'] = data_df[rate_means].mean(axis=1)
+        data_df['rates_stdev'] = data_df[rate_stdevs].mean(axis=1)
 
     # Normalizar os dados (exceto client_id e server_id)
     if NORMALIZE:
