@@ -8,19 +8,34 @@ from sklearn.preprocessing import StandardScaler
 CLIENTS = {"ba": 0, "rj": 1}
 SERVERS = {"ce": 0, "df": 0.33, "es": 0.66, "pi": 1}
 
-CONSIDER_CLIENT_SERVER = True # Adicionar cliente e servidor como features
 WEIGHT_LAST_DATA = 1 # Multiplicar valores mais recentes (deprecated)
-NORMALIZE = False # Aplicar normalização
-ONLY_RATE = True # Descartar todos os dados de DASH que nao sejam de Rate
-USE_TRACEROUTES = True # Usar dados de Traceroute
-DISCARD_FILES_WO_TR = True # Descarta todos os arquivos que NÃO têm TraceRoute
-DISCARD_FILES_W_TR = False # Descarta todos os arquivos que têm TraceRoute
-USE_DIFF = False # Em vez de usar o valor bruto nas medições DASH, usar a diferença entre o atual e o anterior
 EMA_ALPHA = 1  # Fator de suavização para o EMA (1 significa sem EMA)
-ADD_MEAN_VALUES = False # Adiciona como features as médias dos valores de rate_mean e rate_std
+
+USE_DIFF = True # Em vez de usar o valor bruto nas medições DASH, usar a diferença entre o atual e o anterior
+
+CONSIDER_CLIENT_SERVER = True # Adicionar cliente e servidor como features
+
+USE_ONLY_LAST_DASH_MEASURE = False # Usa apenas a ultima medicao DASH em vez das 10 ultimas
+ONLY_RATE = True # Descartar todos os dados de DASH que nao sejam de Rate
+INCLUDE_LAST_RATE_MEAN = True
+INCLUDE_LAST_RATE_STD = True
+
+USE_TRACEROUTES = True # Usar dados de Traceroute
+USE_ONLY_FIRST_AND_LAST_TR = False # Usa apenas a 1a e ultima medicao TRACEROUTE em vez das 5 ultimas
+
+USE_RTT = True # Usar dados de RTT
+
+ADD_MEAN_VALUES = True # Adiciona como features as médias dos valores de rate_mean e rate_std
 RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferença em relação à média (NECESSÁRIO USAR ADD_MEAN_VALUES)
 
+NORMALIZE = False # Aplicar normalização
+
 EVALUATING = False # Ative isso quando apontar para dados de teste para gerar submissão
+
+DISCARD_FILES_W_TR = False and not EVALUATING # Descarta todos os arquivos que têm TraceRoute
+
+DISCARD_FILES_WO_RTT = True and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
+DISCARD_FILES_WO_TR = True and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
 
 def calc_diff(current, previous):
     return current - previous
@@ -45,6 +60,8 @@ def extract_dash_features(dash_data, filename):
     """
     dash_features = []
     previous_ema = None  # Inicializar a variável para armazenar a EMA anterior
+
+    dash_data = dash_data[-10:]
     
     for dash in dash_data:
         rates = dash['rate']
@@ -54,8 +71,11 @@ def extract_dash_features(dash_data, filename):
             return None
 
         # Calcula as médias das medições atuais
-        current_features = [np.mean(rates), np.std(rates)]
+        last_rate = np.mean(rates)
+        last_rate_std = np.std(rates)
 
+        current_features = [last_rate, last_rate_std]
+        
         if not ONLY_RATE:
             elapseds = dash['elapsed']
             ticks = dash['request_ticks']
@@ -74,27 +94,99 @@ def extract_dash_features(dash_data, filename):
                 transform_data(current_features[i], previous_ema[i])
                 for i in range(len(current_features))
             ]
-        
+
+        previous_ema = current_features
         dash_features.append(features)
-        previous_ema = features  # Atualiza o EMA anterior para a próxima iteração
 
     dash_features = dash_features[-10:]
+
+    if USE_ONLY_LAST_DASH_MEASURE:
+        dash_features = dash_features[-1:]
+
+    if INCLUDE_LAST_RATE_MEAN:
+        dash_features += [last_rate]
+
+    if INCLUDE_LAST_RATE_STD:
+        dash_features += [last_rate_std]
+
     return dash_features
+
+def extract_rtt_features(rtt_data):
+    """
+    Extrai as features de RTT (Round-Trip Time) de um objeto RTT, retornando um array de arrays.
+    Cada subarray contém dois elementos: rtt_mean e rtt_stdev.
+    Se o número de medições for menor que 5, retorna None.
+    """
+    if not USE_RTT:
+        return None
+    # Verifica se há pelo menos 5 medições
+    if len(rtt_data) < 5:
+        return None
+
+    # Considera apenas as últimas 5 medições
+    rtt_data = rtt_data[-5:]
+
+    previous_feat = None
+    rtt_features = []
+
+    for rtt in rtt_data:
+        rtt_values = []
+        rtt_counts = []
+
+        for value_str, count in rtt['val'].items():
+            value = float(value_str)
+            rtt_values.append(value)
+            rtt_counts.append(count)
+
+        # Calcula a média ponderada
+        rtt_mean = np.average(rtt_values, weights=rtt_counts)
+        # Calcula o desvio padrão ponderado
+        rtt_stdev = np.sqrt(np.average((rtt_values - rtt_mean) ** 2, weights=rtt_counts))
+
+        current_features = [rtt_mean, rtt_stdev]
+
+        if previous_feat is None:
+            # Se for a primeira medição, inicializa o EMA com os valores atuais
+            features = current_features
+        else:
+            features = [
+                transform_data(current_features[i], previous_feat[i])
+                for i in range(len(current_features))
+            ]
+
+        previous_feat = current_features
+        rtt_features.extend(features)
+
+    rtt_features = rtt_features[-10:]
+    if len(rtt_features) != 10:
+        return None
+    
+    return rtt_features
+
 
 def extract_tr_features(tr_data, filename):
     if not USE_TRACEROUTES:
         return []
+    
+    num_features = 11
     if not tr_data or (len(tr_data) < 5):
-        return None if DISCARD_FILES_WO_TR else 15 * [0]
+        return None if DISCARD_FILES_WO_TR else num_features * [0]
     elif DISCARD_FILES_W_TR:
         return None
     
     tr_data = tr_data[-5:]
+    if USE_ONLY_FIRST_AND_LAST_TR:
+        tr_data = [tr_data[-5], tr_data[-1]]
+
+    previous_feat = None
     tr_features = []
+
+    jumps = []
 
     for measure in tr_data:
         try:
             jump_count = len(measure['val'])
+            
             rtt_values = []
             for hop in measure['val']:
                 try:
@@ -102,12 +194,29 @@ def extract_tr_features(tr_data, filename):
                         rtt_values.append(hop['rtt'])
                 except:
                     continue
-            rtt_mean = np.mean(rtt_values)
+
+            jumps.append(jump_count)
+
+            rtt_sum = np.sum(rtt_values)
             rtt_std_dev = np.std(rtt_values)
-            tr_features += [jump_count, rtt_mean, rtt_std_dev]
+
+            current_features = [rtt_sum, rtt_std_dev]
+            
+            if previous_feat is None:
+                # Se for a primeira medição, inicializa
+                features = current_features
+            else:
+                features = [
+                    transform_data(current_features[i], previous_feat[i])
+                    for i in range(len(current_features))
+                ]
+
+            previous_feat = current_features
+            tr_features += features
         except:
-            return None if DISCARD_FILES_WO_TR else 15 * [0]
+            return None if DISCARD_FILES_WO_TR else num_features * [0]
     
+    tr_features.append(np.std(jumps))
     return tr_features
 
 def process_json_and_csv(json_file, csv_file):
@@ -147,28 +256,41 @@ def process_json_and_csv(json_file, csv_file):
     if not dash_features:
         return None
     
-    if len(dash_features) < 10:
+    if len(dash_features) < 10 and not USE_ONLY_LAST_DASH_MEASURE:
         print(f"Menos de 10 medições DASH em {json_file}. Arquivo ignorado.")
         return None
+    if INCLUDE_LAST_RATE_MEAN:
+        last_id = -2 if INCLUDE_LAST_RATE_STD else -1
+        last_measure = dash_features[last_id]
+        dash_features_flat = np.hstack(np.array(dash_features[:last_id])).tolist()
+        dash_features_flat.append(last_measure)
+        if INCLUDE_LAST_RATE_STD:
+            last_measure_std = dash_features[-1]
+            dash_features_flat.append(last_measure_std)
+    else:
+        dash_features_flat = np.hstack(np.array(dash_features)).tolist()
 
-    # Aplicar peso maior às medições mais recentes (opcional)
-    weights = np.linspace(1, WEIGHT_LAST_DATA, num=10)
-    dash_features_weighted = [np.array(features) * weight for features, weight in zip(dash_features, weights)]
-    dash_features_flat = np.hstack(dash_features_weighted).tolist()
+     # RTT Features
+    rtt_features = extract_rtt_features(data['rtt'])
+    if rtt_features is None:
+        if DISCARD_FILES_WO_RTT:
+            return None
+        rtt_features = 10*[0] if USE_RTT else []
 
     # Traceroute features
     traceroute_features = extract_tr_features(data['traceroute'], json_file)
     if traceroute_features is None:
         return None
-
+    
     # Merge
     # Ordem: ID, Client, Server, Dashes, Avgs, TRs
-    row = row + dash_features_flat + traceroute_features
+    row = row + dash_features_flat + rtt_features + traceroute_features
 
     if not EVALUATING:
         # Ler o arquivo result.csv e colocar resultados calculados
         result_data = pd.read_csv(csv_file)
         result_values = result_data.iloc[0, 1:].values.tolist()  # mean_1, stdev_1, mean_2, stdev_2
+
         row = row + result_values
 
     return row
@@ -212,28 +334,45 @@ def build_columns():
         columns += ['id']
     if CONSIDER_CLIENT_SERVER:
         columns += ['client_id', 'server_id']
-    for i in range(10):
-        if ONLY_RATE:
-            columns.extend([f'dash{i}_rate_mean', f'dash{i}_rate_stdev',])
-        else:
-            columns.extend([
-                f'dash{i}_rate_mean',
-                f'dash{i}_rate_stdev',
-                f'dash{i}_elapsed',
-                f'dash{i}_ticks',
-                f'dash{i}_received'
-            ])
+    
+    if USE_ONLY_LAST_DASH_MEASURE:
+        columns += ['dash_last_rate_mean', 'dash_last_rate_stdev']
+    else:
+        for i in range(10):
+            if ONLY_RATE:
+                columns.extend([f'dash{i}_rate_mean', f'dash{i}_rate_stdev',])
+            else:
+                columns.extend([
+                    f'dash{i}_rate_mean',
+                    f'dash{i}_rate_stdev',
+                    f'dash{i}_elapsed',
+                    f'dash{i}_ticks',
+                    f'dash{i}_received'
+                ])
+    if INCLUDE_LAST_RATE_MEAN:
+        columns.extend(['dash_last_rate'])
+    if INCLUDE_LAST_RATE_STD:
+        columns.extend(['dash_last_rate_std'])
 
-    if ADD_MEAN_VALUES:
-        columns += ["rates_mean", "rates_stdev"]
-
-    if USE_TRACEROUTES:
+    if USE_RTT:
         for i in range(5):
             columns.extend([
-                f'tr{i}_jump_count',
-                f'tr{i}_rtt_mean',
-                f'tr{i}_rtt_stdev',
+                f'rtt{i}_mean',
+                f'rtt{i}_stdev',
             ])
+
+    if USE_TRACEROUTES:
+        if USE_ONLY_FIRST_AND_LAST_TR:
+            columns.extend(
+                [f'tr0_rtt_sum', f'tr0_rtt_stdev', f'tr4_rtt_sum', f'tr4_rtt_stdev']
+            )
+        else:
+            for i in range(5):
+                columns.extend([
+                    f'tr{i}_rtt_sum',
+                    f'tr{i}_rtt_stdev',
+                ])
+        columns.extend(['tr_jumps_std'])
 
     if not EVALUATING:
         # Adicionar as colunas dos resultados esperados
@@ -241,32 +380,58 @@ def build_columns():
 
     return columns
 
+def calculate_df_mean(df):
+    if not USE_DIFF:
+        return df.mean(axis=1)
+    
+    # Compute cumulative sum across the row
+    adjusted_values = df.apply(lambda row: row.cumsum(), axis=1)
+    
+    # Calculate the mean of the adjusted values
+    mean_values = adjusted_values.mean(axis=1)
+    
+    return mean_values
+
+
 def save_to_csv(all_data, output_csv):
     """
     Salva os dados processados em um arquivo CSV.
     """
     try:
-        data_df = pd.DataFrame(all_data, columns=build_columns())
+        data_df = pd.DataFrame(all_data, columns=build_columns()).dropna()
     except Exception as e:
         print(f"Columns: {build_columns()}")
         raise e
 
-    if RESULT_TO_DIFF_FROM_AVG:
+    if ADD_MEAN_VALUES:
         # Calcular a média das colunas de rate_mean e rate_stdev
         rate_means = [col for col in data_df.columns if 'dash' in col and 'rate_mean' in col]
         rate_stdevs = [col for col in data_df.columns if 'dash' in col and 'rate_stdev' in col]
 
-        data_df['rates_mean'] = data_df[rate_means].mean(axis=1)
-        data_df['rates_stdev'] = data_df[rate_stdevs].mean(axis=1)
+        data_df['rates_mean'] = calculate_df_mean(data_df[rate_means])
+        data_df['rates_stdev'] = calculate_df_mean(data_df[rate_stdevs])
+
+        if not EVALUATING:
+            # Reorganizar as colunas para mover 'mean_1', 'stdev_1', 'mean_2', 'stdev_2'
+            # após 'rates_mean' e 'rates_stdev'
+            ordered_columns = [col for col in data_df.columns if col not in ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']]
+            ordered_columns += ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+            data_df = data_df[ordered_columns]
+            if RESULT_TO_DIFF_FROM_AVG:
+                data_df['mean_1'] = data_df['mean_1'] - data_df['rates_mean']
+                data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
+                data_df['stdev_1'] = data_df['stdev_1'] - data_df['rates_stdev']
+                data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
 
     # Normalizar os dados (exceto client_id e server_id)
     if NORMALIZE:
         scaler = StandardScaler()
-        if CONSIDER_CLIENT_SERVER:
-            data_df.iloc[:, 2:-4] = scaler.fit_transform(data_df.iloc[:, 2:-4])
+        if RESULT_TO_DIFF_FROM_AVG:
+            # We cannot normalize the avgs
+            data_df.iloc[:, :-6] = scaler.fit_transform(data_df.iloc[:, :-6])
         else:
             data_df.iloc[:, :-4] = scaler.fit_transform(data_df.iloc[:, :-4])
-    
+
     data_df.to_csv(output_csv, index=False)
 
 def main():

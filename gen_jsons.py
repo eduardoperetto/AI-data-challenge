@@ -10,6 +10,7 @@ CLIENTS = ["ba", "rj"]
 SERVERS = ["ce", "df", "es", "pi"]
 
 INTERSECT_DASH_DATA = True
+FRACTION_TO_INTERSECT = 2.5 # Quanto maior, mais vai intersectar, gerando mais inputs
 
 def parse_filename_to_datetime(filename):
     """Extrai a data e hora do nome do arquivo."""
@@ -48,9 +49,15 @@ def filter_rtt_traceroute(data, start_ts, end_ts):
 def calculate_statistics(measures):
     """Calcula mean e std dev das duas últimas medições."""
     last_2 = measures[-2:]
+    mean_1, stdev_1 = calculate_mean_and_stdev(last_2[0]["rate"])
+    mean_2, stdev_2 = calculate_mean_and_stdev(last_2[1]["rate"])
+
+    if not (mean_1 and stdev_1 and mean_2 and stdev_2):
+        return None
+
     return [
-        calculate_mean_and_stdev(last_2[0]["rate"]),
-        calculate_mean_and_stdev(last_2[1]["rate"])
+        [mean_1, stdev_1],
+        [mean_2, stdev_2]
     ]
 
 def calculate_mean_and_stdev(values):
@@ -109,8 +116,9 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
 
         statistics = calculate_statistics(last_2_measures)
 
-        output_folder = os.path.join(os.getcwd(), "converted_input", f"{client}", f"{server}", f"{time_0.strftime('%Y%m%d_%H%M')}")
-        generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder)
+        if statistics is not None:
+            output_folder = os.path.join(os.getcwd(), "converted_input", f"{client}", f"{server}", f"{time_0.strftime('%Y%m%d_%H%M')}")
+            generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder)
         
         if all_files:
             time_0 = parse_filename_to_datetime(all_files[0])
@@ -125,7 +133,7 @@ def collect_files_for_time_window(all_files, start_time, time_window):
         current_files.append(filename)
     
     if INTERSECT_DASH_DATA:
-        range_to_del = int(len(current_files)/2)
+        range_to_del = int(len(current_files)/FRACTION_TO_INTERSECT)
     else:
         range_to_del = int(len(current_files))
 

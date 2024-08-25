@@ -1,8 +1,10 @@
 */output
 converted_input
 *.pkl
+*.h5
 */eval
 *.csv
+tuner_results
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
