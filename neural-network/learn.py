@@ -10,6 +10,11 @@ from keras_tuner import RandomSearch
 import os
 
 USING_RESULT_AS_DIFF = False
+
+USING_RESULT_AS_DIFF_FROM_LAST = True
+COLUMN_ID_LAST_RATE_MEAN=22
+COLUMN_ID_LAST_RATE_STD=23
+
 LEARN_ONLY_MEAN = False  # Modelo predirá apenas dois valores: mean_1 e mean_2
 LEARN_ONLY_FIRST_MEAN = False  # Modelo predirá apenas um valor: mean_1
 LEARN_ONLY_STDEV = True  # Modelo predirá apenas dois valores: stdev_1 e stdev_2
@@ -83,6 +88,24 @@ def train_neural_network(X_train, y_train):
 
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
+
+    y_pred_adj = []
+    y_test_adj = []
+
+    if USING_RESULT_AS_DIFF_FROM_LAST:
+        for x_row in X_test:
+            last_mean = x_row[COLUMN_ID_LAST_RATE_MEAN]
+            last_std = x_row[COLUMN_ID_LAST_RATE_STD]
+            if LEARN_ONLY_MEAN:
+                y_pred_adj += [y_pred[0] + last_mean, y_pred[1] + last_mean]
+                y_test_adj += [y_test[0] + last_mean, y_test[1] + last_mean]
+            elif LEARN_ONLY_STDEV:
+                y_pred_adj += [y_pred[0] + last_std, y_pred[1] + last_std]
+                y_test_adj += [y_test[0] + last_std, y_test[1] + last_std]
+    
+    y_pred = y_pred_adj
+    y_test = y_test_adj
+
     mape = mean_absolute_percentage_error(y_test, y_pred)
     print(f"MAPE: {mape * 100:.2f}%")
     return f"{mape * 100:.2f}"

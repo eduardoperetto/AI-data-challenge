@@ -17,8 +17,8 @@ CONSIDER_CLIENT_SERVER = True # Adicionar cliente e servidor como features
 
 USE_ONLY_LAST_DASH_MEASURE = False # Usa apenas a ultima medicao DASH em vez das 10 ultimas
 ONLY_RATE = True # Descartar todos os dados de DASH que nao sejam de Rate
-INCLUDE_LAST_RATE_MEAN = True
-INCLUDE_LAST_RATE_STD = True
+INCLUDE_LAST_RATE_MEAN = True or RESULT_TO_DIFF_FROM_LAST
+INCLUDE_LAST_RATE_STD = True or RESULT_TO_DIFF_FROM_LAST
 
 USE_TRACEROUTES = True # Usar dados de Traceroute
 USE_ONLY_FIRST_AND_LAST_TR = False # Usa apenas a 1a e ultima medicao TRACEROUTE em vez das 5 ultimas
@@ -27,15 +27,16 @@ USE_RTT = True # Usar dados de RTT
 
 ADD_MEAN_VALUES = True # Adiciona como features as médias dos valores de rate_mean e rate_std
 RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferença em relação à média (NECESSÁRIO USAR ADD_MEAN_VALUES)
+RESULT_TO_DIFF_FROM_LAST = False # Considerar o que o modelo deve encontrar como a diferença em relação à última medição
 
 NORMALIZE = False # Aplicar normalização
 
-EVALUATING = False # Ative isso quando apontar para dados de teste para gerar submissão
+EVALUATING = True # Ative isso quando apontar para dados de teste para gerar submissão
 
-DISCARD_FILES_W_TR = False and not EVALUATING # Descarta todos os arquivos que têm TraceRoute
+DISCARD_FILES_W_TR_OR_RTT = False and not EVALUATING # Descarta todos os arquivos que têm TraceRoute
 
-DISCARD_FILES_WO_RTT = True and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
-DISCARD_FILES_WO_TR = True and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
+DISCARD_FILES_WO_RTT = False and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
+DISCARD_FILES_WO_TR = False and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
 
 def calc_diff(current, previous):
     return current - previous
@@ -122,7 +123,7 @@ def extract_rtt_features(rtt_data):
     # Verifica se há pelo menos 5 medições
     if len(rtt_data) < 5:
         return None
-
+    
     # Considera apenas as últimas 5 medições
     rtt_data = rtt_data[-5:]
 
@@ -171,7 +172,7 @@ def extract_tr_features(tr_data, filename):
     num_features = 11
     if not tr_data or (len(tr_data) < 5):
         return None if DISCARD_FILES_WO_TR else num_features * [0]
-    elif DISCARD_FILES_W_TR:
+    elif DISCARD_FILES_W_TR_OR_RTT:
         return None
     
     tr_data = tr_data[-5:]
@@ -276,7 +277,10 @@ def process_json_and_csv(json_file, csv_file):
         if DISCARD_FILES_WO_RTT:
             return None
         rtt_features = 10*[0] if USE_RTT else []
-
+    else:
+        if DISCARD_FILES_W_TR_OR_RTT:
+            return None
+        
     # Traceroute features
     traceroute_features = extract_tr_features(data['traceroute'], json_file)
     if traceroute_features is None:
@@ -422,6 +426,12 @@ def save_to_csv(all_data, output_csv):
                 data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
                 data_df['stdev_1'] = data_df['stdev_1'] - data_df['rates_stdev']
                 data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
+            elif RESULT_TO_DIFF_FROM_LAST:
+                data_df['mean_1'] = data_df['mean_1'] - data_df['dash_last_rate']
+                data_df['mean_2'] = data_df['mean_2'] - data_df['dash_last_rate']
+                data_df['stdev_1'] = data_df['stdev_1'] - data_df['dash_last_rate_std']
+                data_df['stdev_2'] = data_df['stdev_2'] - data_df['dash_last_rate_std']
+
 
     # Normalizar os dados (exceto client_id e server_id)
     if NORMALIZE:

@@ -8,13 +8,24 @@ import os
 import numpy as np
 
 USING_RESULT_AS_DIFF = False
+USING_RESULT_AS_DIFF_FROM_LAST = False
+COLUMN_ID_LAST_RATE_MEAN=22
+COLUMN_ID_LAST_RATE_STD=23
 
-LEARN_ONLY_MEAN = True  # Modelo predirá apenas dois valores: mean_1 e mean_2
+LEARN_ONLY_MEAN = False  # Modelo predirá apenas dois valores: mean_1 e mean_2
 LEARN_ONLY_FIRST_MEAN = False  # Modelo predirá apenas um valor: mean_1
-LEARN_ONLY_STDEV = False # Modelo predirá apenas dois valores: stdev_1 e stdev_2
+LEARN_ONLY_STDEV = True # Modelo predirá apenas dois valores: stdev_1 e stdev_2
 
 def load_data_from_csv(input_csv):
     data_df = pd.read_csv(input_csv)
+
+    columns_to_keep = [
+        'rates_mean', 'dash_last_rate', 'rtt0_mean', 'tr0_rtt_sum', 
+        'tr0_rtt_stdev', 'dash_last_rate_std', 'dash8_rate_mean', 
+        'rates_stdev', 'server_id', 'dash0_rate_mean', 
+        'dash9_rate_mean', 'dash3_rate_mean'
+    ]
+
     X = data_df.iloc[:, :-4].values
     y = data_df.iloc[:, -4:].values
 
@@ -33,10 +44,11 @@ def load_data_from_csv(input_csv):
 def train_random_forest(X_train, y_train):
     rf = RandomForestRegressor(random_state=42)
     param_grid = {
-        'n_estimators': [50, 200],
-        'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [4, 10, 15]
+        'max_features': [0.3, 0.5, 0.75, 0.9],
+        'n_estimators': [200],
+        'max_depth': [5, 10, 20],
+        'min_samples_split': [2, 10],
+        'min_samples_leaf': [4, 10]
     }
     grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=1)
     
@@ -50,7 +62,23 @@ def train_random_forest(X_train, y_train):
 
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
-    
+
+    y_pred_adj = []
+    y_test_adj = []
+
+    if USING_RESULT_AS_DIFF_FROM_LAST:
+        for x_row in X_test:
+            last_mean = x_row[COLUMN_ID_LAST_RATE_MEAN]
+            last_std = x_row[COLUMN_ID_LAST_RATE_STD]
+            if LEARN_ONLY_MEAN:
+                y_pred_adj += [y_pred[0] + last_mean, y_pred[1] + last_mean]
+                y_test_adj += [y_test[0] + last_mean, y_test[1] + last_mean]
+            elif LEARN_ONLY_STDEV:
+                y_pred_adj += [y_pred[0] + last_std, y_pred[1] + last_std]
+                y_test_adj += [y_test[0] + last_std, y_test[1] + last_std]
+        y_pred = y_pred_adj
+        y_test = y_test_adj
+
     mape = mean_absolute_percentage_error(y_test, y_pred)
     print(f"MAPE: {mape * 100:.2f}%")
     return f"{mape * 100:.2f}"

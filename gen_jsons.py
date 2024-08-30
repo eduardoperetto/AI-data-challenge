@@ -10,7 +10,7 @@ CLIENTS = ["ba", "rj"]
 SERVERS = ["ce", "df", "es", "pi"]
 
 INTERSECT_DASH_DATA = True
-FRACTION_TO_INTERSECT = 2.5 # Quanto maior, mais vai intersectar, gerando mais inputs
+FRACTION_TO_INTERSECT = 3.5 # Quanto maior, mais vai intersectar, gerando mais inputs
 
 def parse_filename_to_datetime(filename):
     """Extrai a data e hora do nome do arquivo."""
@@ -62,9 +62,12 @@ def calculate_statistics(measures):
 
 def calculate_mean_and_stdev(values):
     """Calcula a média e o desvio padrão de uma lista de valores."""
-    mean = sum(values) / len(values)
-    stdev = (sum((x - mean) ** 2 for x in values) / len(values)) ** 0.5
-    return mean, stdev
+    try:
+        mean = sum(values) / len(values)
+        stdev = (sum((x - mean) ** 2 for x in values) / len(values)) ** 0.5
+        return mean, stdev
+    except:
+        return None, None
 
 def generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder):
     """Gera os arquivos JSON e CSV com os resultados."""
@@ -90,6 +93,8 @@ def generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_
         writer = csv.writer(csvfile)
         writer.writerow(["id", "mean_1", "stdev_1", "mean_2", "stdev_2"])
         writer.writerow([json_data["id"], *statistics[0], *statistics[1]])
+    global num_files_gen
+    num_files_gen += 1
 
 def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
     """Processa todos os arquivos de um par client-server."""
@@ -117,6 +122,10 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
         statistics = calculate_statistics(last_2_measures)
 
         if statistics is not None:
+            if len(measures_rtt) == 0 or len(measures_traceroute) == 0:
+                global files_wo_rtt_tr
+                files_wo_rtt_tr += 1
+
             output_folder = os.path.join(os.getcwd(), "converted_input", f"{client}", f"{server}", f"{time_0.strftime('%Y%m%d_%H%M')}")
             generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder)
         
@@ -125,6 +134,16 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
 
 def collect_files_for_time_window(all_files, start_time, time_window):
     """Coleta arquivos dentro de uma janela de tempo."""
+    print(f"Collecting dash files for {start_time}")
+    print(f"First file is {all_files[0]}")
+    print(f"{len(all_files)} files remaining")
+
+    if len(all_files) <= 5:
+        current_files = all_files
+        for file in all_files:
+            all_files.remove(file)
+        return current_files
+
     current_files = []
     for filename in all_files:
         file_datetime = parse_filename_to_datetime(filename)
@@ -138,11 +157,16 @@ def collect_files_for_time_window(all_files, start_time, time_window):
         range_to_del = int(len(current_files))
 
     for i in range(range_to_del):
-        all_files.remove(current_files[i])
+        if len(current_files) > 5:
+            all_files.remove(current_files[i])
     
     return current_files
 
 def main():
+    global files_wo_rtt_tr, num_files_gen
+    files_wo_rtt_tr = 0
+    num_files_gen = 0
+
     base_dash_path = "./dataset/Train/dash"
     rtt_path = "./dataset/Train/rtt"
     traceroute_path = "./dataset/Train/traceroute"
@@ -163,6 +187,8 @@ def main():
             process_files(client, server, base_dash_path, rtt_data, traceroute_data)
 
     print(f"Generated successfully on {converted_input_path}")
+    print(f"Num files generated: {num_files_gen}")
+    print(f"Num files without RTT or TR: {files_wo_rtt_tr}")
 
 if __name__ == "__main__":
     main()
