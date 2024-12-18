@@ -9,7 +9,7 @@ import shutil  # Import shutil to handle folder deletion
 CLIENTS = ["ba", "rj"]
 SERVERS = ["ce", "df", "es", "pi"]
 
-INTERSECT_DASH_DATA = True
+INTERSECT_DASH_DATA = False
 FRACTION_TO_INTERSECT = 3.5 # Quanto maior, mais vai intersectar, gerando mais inputs
 
 def parse_filename_to_datetime(filename):
@@ -130,7 +130,11 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
             generate_json_and_csv(client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder)
         
         if all_files:
-            time_0 = parse_filename_to_datetime(all_files[0])
+            if parse_filename_to_datetime(all_files[0]) != time_0:
+                time_0 = parse_filename_to_datetime(all_files[0])
+            else:
+                all_files.remove(all_files[0])
+                time_0 = parse_filename_to_datetime(all_files[0])
 
 def collect_files_for_time_window(all_files, start_time, time_window):
     """Coleta arquivos dentro de uma janela de tempo."""
@@ -155,6 +159,9 @@ def collect_files_for_time_window(all_files, start_time, time_window):
         range_to_del = int(len(current_files)/FRACTION_TO_INTERSECT)
     else:
         range_to_del = int(len(current_files))
+
+    if range_to_del < 1:
+        range_to_del = 1
 
     for i in range(range_to_del):
         if len(current_files) > 5:

@@ -31,7 +31,7 @@ RESULT_TO_DIFF_FROM_LAST = False # Considerar o que o modelo deve encontrar como
 
 NORMALIZE = False # Aplicar normalização
 
-EVALUATING = True # Ative isso quando apontar para dados de teste para gerar submissão
+EVALUATING = False # Ative isso quando apontar para dados de teste para gerar submissão
 
 DISCARD_FILES_W_TR_OR_RTT = False and not EVALUATING # Descarta todos os arquivos que têm TraceRoute
 

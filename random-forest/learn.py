@@ -12,9 +12,9 @@ USING_RESULT_AS_DIFF_FROM_LAST = False
 COLUMN_ID_LAST_RATE_MEAN=22
 COLUMN_ID_LAST_RATE_STD=23
 
-LEARN_ONLY_MEAN = False  # Modelo predirá apenas dois valores: mean_1 e mean_2
+LEARN_ONLY_MEAN = True  # Modelo predirá apenas dois valores: mean_1 e mean_2
 LEARN_ONLY_FIRST_MEAN = False  # Modelo predirá apenas um valor: mean_1
-LEARN_ONLY_STDEV = True # Modelo predirá apenas dois valores: stdev_1 e stdev_2
+LEARN_ONLY_STDEV = False # Modelo predirá apenas dois valores: stdev_1 e stdev_2
 
 def load_data_from_csv(input_csv):
     data_df = pd.read_csv(input_csv)
@@ -44,7 +44,7 @@ def load_data_from_csv(input_csv):
 def train_random_forest(X_train, y_train):
     rf = RandomForestRegressor(random_state=42)
     param_grid = {
-        'max_features': [0.3, 0.5, 0.75, 0.9],
+        'max_features': [0.3, 0.5, 0.9],
         'n_estimators': [200],
         'max_depth': [5, 10, 20],
         'min_samples_split': [2, 10],
