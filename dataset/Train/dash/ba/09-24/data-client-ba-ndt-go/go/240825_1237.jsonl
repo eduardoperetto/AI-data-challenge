@@ -1,8 +1,0 @@
-{"Key":"starting","Value":{"Test":"download"}}
-{"Key":"connected","Value":{"Test":"download","Server":"go.medidor.rnp.br"}}
-{"Key":"measurement","Value":{"AppInfo":{"NumBytes":131072,"ElapsedTime":7068733},"Origin":"client","Test":"download"}}
-{"Key":"complete","Value":{"Test":"download"}}
-{"Key":"starting","Value":{"Test":"upload"}}
-{"Key":"error","Value":{"Test":"upload","Failure":"read tcp 200.128.2.21:57996-\u003e200.18.160.121:4443: i/o timeout"}}
-{"Key":"complete","Value":{"Test":"upload"}}
-{"ServerFQDN":"go.medidor.rnp.br","ServerIP":"","ClientIP":"","Download":{"UUID":"","Throughput":{"Value":0.148340020764683,"Unit":"Mbit/s"},"Latency":{"Value":0,"Unit":""},"Retransmission":{"Value":0,"Unit":""}},"Upload":{"UUID":"","Throughput":{"Value":0,"Unit":""},"Latency":{"Value":0,"Unit":""},"Retransmission":{"Value":0,"Unit":""}}}

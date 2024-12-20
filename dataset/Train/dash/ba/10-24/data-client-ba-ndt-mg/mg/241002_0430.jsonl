@@ -1,7 +1,0 @@
-{"Key":"starting","Value":{"Test":"download"}}
-{"Key":"error","Value":{"Test":"download","Failure":"dial tcp 200.131.2.169:4443: i/o timeout"}}
-{"Key":"complete","Value":{"Test":"download"}}
-{"Key":"starting","Value":{"Test":"upload"}}
-{"Key":"error","Value":{"Test":"upload","Failure":"dial tcp 200.131.2.169:4443: connect: no route to host"}}
-{"Key":"complete","Value":{"Test":"upload"}}
-{"ServerFQDN":"mg.medidor.rnp.br","ServerIP":"","ClientIP":"","Download":{"UUID":"","Throughput":{"Value":0,"Unit":""},"Latency":{"Value":0,"Unit":""},"Retransmission":{"Value":0,"Unit":""}},"Upload":{"UUID":"","Throughput":{"Value":0,"Unit":""},"Latency":{"Value":0,"Unit":""},"Retransmission":{"Value":0,"Unit":""}}}
