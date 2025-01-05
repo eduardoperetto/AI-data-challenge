@@ -7,10 +7,21 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 
 # Definições dos modelos e flags
-MODEL_FILE = "random_forest_3.5F_model_10.79.pkl"
-MODEL_FILE_STD = "random_forest_model_stdevs_max_f_7.89.pkl"
-MODEL_FILE_WO_TR = "random_forest_model_10.31_wo_alldata.pkl"
-MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_7.95_wo_alldata.pkl"
+# MODEL_FILE = "old_models/random_forest_3.5F_model_10.79.pkl"
+# MODEL_FILE = "random_forest_model_12.58_mean_discord_wortt.pkl"
+MODEL_FILE = "random_forest_model_12.60_mean_withrtt_mergeclsv.pkl"
+
+# MODEL_FILE_STD = "old_models/random_forest_model_stdevs_max_f_7.89.pkl"
+# MODEL_FILE_STD = "random_forest_model_stdevs_9.30_discard_wortt.pkl"
+MODEL_FILE_STD = "random_forest_model_stdevs_9.31_with_rtt_mergeclsv.pkl"
+
+# MODEL_FILE_WO_TR = "old_models/random_forest_model_10.31_wo_alldata.pkl"
+# MODEL_FILE_WO_TR = "random_forest_model_7.18_mean_wortt2.pkl"
+MODEL_FILE_WO_TR = "random_forest_model_7.20_mean_wortt_mergeclsv.pkl"
+
+# MODEL_FILE_WO_TR_STD = "old_models/random_forest_model_stdevs_7.95_wo_alldata.pkl"
+# MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_6.41_wortt.pkl"
+MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_6.42_wortt_mergeclsv.pkl"
 
 USE_ONLY_AVG = False
 USE_AVG_WHEN_NO_TR = True
@@ -198,6 +209,11 @@ def main():
     model_file_wo = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"./{MODEL_FILE_WO_TR}")
     model_file_wo_std = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"./{MODEL_FILE_WO_TR_STD}")
 
+    print(f"MODEL_FILE: {MODEL_FILE}")
+    print(f"MODEL_FILE_STD: {MODEL_FILE_STD}")
+    print(f"MODEL_FILE_WO_TR: {MODEL_FILE_WO_TR}")
+    print(f"MODEL_FILE_WO_TR_STD: {MODEL_FILE_WO_TR_STD}")
+
     # Carregar o modelo salvo
     model_data = joblib.load(model_file)
     model = model_data['model']
@@ -217,7 +233,7 @@ def main():
         model_std = None
 
     mape_list = []
-    random_states = [42, 7, 19, 23, 11]  # Lista de 5 valores aleatórios para random_state
+    random_states = [42, 7, 19]  # Lista de 5 valores aleatórios para random_state
 
     for random_state in random_states:
         print(f"Executando com random_state: {random_state}")

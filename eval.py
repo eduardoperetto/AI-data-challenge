@@ -4,11 +4,18 @@ import joblib
 import os
 from datetime import datetime
 
-# Configurações de parâmetros
-MODEL_FILE = "random_forest_3.5F_model_10.79.pkl"
-MODEL_FILE_STD = "random_forest_model_stdevs_max_f_7.89.pkl"
-MODEL_FILE_WO_TR = "random_forest_model_10.31_wo_alldata.pkl"
-MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_7.95_wo_alldata.pkl"
+# Definições dos modelos e flags
+# MODEL_FILE = "old_models/random_forest_3.5F_model_10.79.pkl"
+MODEL_FILE = "random_forest_model_12.58_mean_discord_wortt.pkl"
+
+# MODEL_FILE_STD = "old_models/random_forest_model_stdevs_max_f_7.89.pkl"
+MODEL_FILE_STD = "random_forest_model_stdevs_9.30_discard_wortt.pkl"
+
+# MODEL_FILE_WO_TR = "old_models/random_forest_model_10.31_wo_alldata.pkl"
+MODEL_FILE_WO_TR = "random_forest_model_7.18_mean_wortt2.pkl"
+
+# MODEL_FILE_WO_TR_STD = "old_models/random_forest_model_stdevs_7.95_wo_alldata.pkl"
+MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_6.41_wortt.pkl"
 
 USE_ONLY_AVG = False
 USE_AVG_WHEN_NO_TR = False
@@ -80,7 +87,9 @@ def calc_predictions(data_df, X, model, model_std, model_wo, model_wo_std):
                         'dash2_rate_mean', 'dash2_rate_stdev', 'dash3_rate_mean', 'dash3_rate_stdev', 'dash4_rate_mean', 'dash4_rate_stdev',
                         'dash5_rate_mean', 'dash5_rate_stdev', 'dash6_rate_mean', 'dash6_rate_stdev', 'dash7_rate_mean', 'dash7_rate_stdev',
                         'dash8_rate_mean', 'dash8_rate_stdev', 'dash9_rate_mean', 'dash9_rate_stdev', 'dash_last_rate', 'dash_last_rate_std',
-                        'rates_mean', 'rates_stdev'
+                        'rtt0_mean', 'rtt0_stdev','rtt1_mean', 'rtt1_stdev', 'rtt2_mean', 'rtt2_stdev', 'rtt3_mean', 'rtt3_stdev', 'rtt4_mean', 
+                        'rtt4_stdev', 'tr0_rtt_sum', 'tr0_rtt_stdev', 'tr1_rtt_sum', 'tr1_rtt_stdev', 'tr2_rtt_sum', 'tr2_rtt_stdev', 'tr3_rtt_sum', 
+                        'tr3_rtt_stdev', 'tr4_rtt_sum', 'tr4_rtt_stdev', 'tr_jumps_std', 'rates_mean', 'rates_stdev'
                     ]
                     X_row = row[columns_to_select].values.reshape(1, -1)
                     y_mean = make_predictions(model_wo, X_row).flatten().tolist()

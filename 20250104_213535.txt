@@ -1,0 +1,22 @@
+Statistical Analysis of MAPE Across Different Models and Feature Considerations
+================================================================================
+
+**Groups Compared:**
+- RF (With RTT-TR Features)
+- RF (Without RTT-TR Features)
+- XGBoost (With RTT-TR Features)
+- XGBoost (Without RTT-TR Features)
+
+**Summary Statistics:**
+                 Group  Number of Runs  Median MAPE (%)
+        RF_with_RTT_TR              11            9.450
+     RF_without_RTT_TR              11            9.715
+   XGBoost_with_RTT_TR              11            8.785
+XGBoost_without_RTT_TR              11            9.945
+
+### Kruskal-Wallis H Test
+- **Test Statistic:** 0.7981
+- **p-value:** 0.8499
+- **Result:** p-value (0.8499) >= 0.05, indicating no significant differences among the groups.
+
+No post hoc tests were conducted as the Kruskal-Wallis test was not significant.
