@@ -2,6 +2,7 @@ import os
 import json
 import pandas as pd
 import numpy as np
+import time
 from sklearn.preprocessing import StandardScaler
 
 # Mapeamento de clientes e servidores para valores numéricos
@@ -20,10 +21,13 @@ ONLY_RATE = True # Descartar todos os dados de DASH que nao sejam de Rate
 INCLUDE_LAST_RATE_MEAN = True or RESULT_TO_DIFF_FROM_LAST
 INCLUDE_LAST_RATE_STD = True or RESULT_TO_DIFF_FROM_LAST
 
-USE_TRACEROUTES = True # Usar dados de Traceroute
+ADD_TS = False
+ADD_TS_SIN_COS = False
+
+USE_TRACEROUTES = False # Usar dados de Traceroute
 USE_ONLY_FIRST_AND_LAST_TR = False # Usa apenas a 1a e ultima medicao TRACEROUTE em vez das 5 ultimas
 
-USE_RTT = True # Usar dados de RTT
+USE_RTT = False # Usar dados de RTT
 
 ADD_MEAN_VALUES = True # Adiciona como features as médias dos valores de rate_mean e rate_std
 RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferença em relação à média (NECESSÁRIO USAR ADD_MEAN_VALUES)
@@ -31,12 +35,14 @@ RESULT_TO_DIFF_FROM_LAST = False # Considerar o que o modelo deve encontrar como
 
 NORMALIZE = False # Aplicar normalização
 
-EVALUATING = True # Ative isso quando apontar para dados de teste para gerar submissão
+EVALUATING = False # Ative isso quando apontar para dados de teste para gerar submissão
 
 DISCARD_FILES_W_TR_OR_RTT = False and not EVALUATING # Descarta todos os arquivos que têm TraceRoute
 
-DISCARD_FILES_WO_RTT = False and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
-DISCARD_FILES_WO_TR = False and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
+DISCARD_FILES_WO_RTT = True and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
+DISCARD_FILES_WO_TR = True and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
+
+PREDICT_ONLY_ONE_MEASURE = False
 
 def calc_diff(current, previous):
     return current - previous
@@ -118,8 +124,6 @@ def extract_rtt_features(rtt_data):
     Cada subarray contém dois elementos: rtt_mean e rtt_stdev.
     Se o número de medições for menor que 5, retorna None.
     """
-    if not USE_RTT:
-        return None
     # Verifica se há pelo menos 5 medições
     if len(rtt_data) < 5:
         return None
@@ -166,9 +170,6 @@ def extract_rtt_features(rtt_data):
 
 
 def extract_tr_features(tr_data, filename):
-    if not USE_TRACEROUTES:
-        return []
-    
     num_features = 11
     if not tr_data or (len(tr_data) < 5):
         return None if DISCARD_FILES_WO_TR else num_features * [0]
@@ -220,6 +221,20 @@ def extract_tr_features(tr_data, filename):
     tr_features.append(np.std(jumps))
     return tr_features
 
+def get_time_of_day_sin_cos(timestamp):
+    time_struct = time.localtime(timestamp)
+
+    hours = time_struct.tm_hour
+    minutes = time_struct.tm_min
+
+    total_minutes = hours * 60 + minutes
+
+    # Calculate sine and cosine for the minutes of the day
+    sin_value = np.sin(2 * np.pi * total_minutes / 1440)
+    cos_value = np.cos(2 * np.pi * total_minutes / 1440)
+
+    return sin_value, cos_value
+
 def process_json_and_csv(json_file, csv_file):
     """
     Processa um único arquivo JSON e o respectivo arquivo result.csv, 
@@ -233,6 +248,14 @@ def process_json_and_csv(json_file, csv_file):
 
     if EVALUATING:
         row.append(data['id'])
+
+    if ADD_TS:
+        row.append(data['start_ts'])
+
+    if ADD_TS_SIN_COS:
+        time_sin, time_cos = get_time_of_day_sin_cos(data['start_ts'])
+        row.append(time_sin)
+        row.append(time_cos)
 
     if CONSIDER_CLIENT_SERVER:
         client_id = data['cliente']
@@ -248,7 +271,10 @@ def process_json_and_csv(json_file, csv_file):
 
         client_value = CLIENTS[client_id]
         server_value = SERVERS[server_id]
-        row += [client_value, server_value]
+        # Combine client and server into a single feature
+        # This ensures each (client, server) pair has a unique value
+        combined_value = client_value + (server_value * 10)
+        row.append(combined_value)  # Add the combined feature
 
     # Dash Features
     dash_data = data['dash']
@@ -276,7 +302,7 @@ def process_json_and_csv(json_file, csv_file):
     if rtt_features is None:
         if DISCARD_FILES_WO_RTT:
             return None
-        rtt_features = 10*[0] if USE_RTT else []
+        rtt_features = []
     else:
         if DISCARD_FILES_W_TR_OR_RTT:
             return None
@@ -288,7 +314,12 @@ def process_json_and_csv(json_file, csv_file):
     
     # Merge
     # Ordem: ID, Client, Server, Dashes, Avgs, TRs
-    row = row + dash_features_flat + rtt_features + traceroute_features
+    row = row + dash_features_flat
+
+    if USE_RTT:
+        row = row + rtt_features
+    if USE_TRACEROUTES:
+        row = row + traceroute_features
 
     if not EVALUATING:
         # Ler o arquivo result.csv e colocar resultados calculados
@@ -336,8 +367,13 @@ def build_columns():
     columns = []
     if EVALUATING:
         columns += ['id']
+    if ADD_TS:
+        columns += ['start_ts']
+    if ADD_TS_SIN_COS:
+        columns += ['start_ts_sin']
+        columns += ['start_ts_cos']
     if CONSIDER_CLIENT_SERVER:
-        columns += ['client_id', 'server_id']
+        columns += ['client_server_id']
     
     if USE_ONLY_LAST_DASH_MEASURE:
         columns += ['dash_last_rate_mean', 'dash_last_rate_stdev']
@@ -419,18 +455,24 @@ def save_to_csv(all_data, output_csv):
             # Reorganizar as colunas para mover 'mean_1', 'stdev_1', 'mean_2', 'stdev_2'
             # após 'rates_mean' e 'rates_stdev'
             ordered_columns = [col for col in data_df.columns if col not in ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']]
-            ordered_columns += ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+            if PREDICT_ONLY_ONE_MEASURE:
+                ordered_columns += ['mean_1', 'stdev_1']
+            else:
+                ordered_columns += ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+
             data_df = data_df[ordered_columns]
             if RESULT_TO_DIFF_FROM_AVG:
                 data_df['mean_1'] = data_df['mean_1'] - data_df['rates_mean']
-                data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
                 data_df['stdev_1'] = data_df['stdev_1'] - data_df['rates_stdev']
-                data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
+                if not PREDICT_ONLY_ONE_MEASURE:
+                    data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
+                    data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
             elif RESULT_TO_DIFF_FROM_LAST:
                 data_df['mean_1'] = data_df['mean_1'] - data_df['dash_last_rate']
-                data_df['mean_2'] = data_df['mean_2'] - data_df['dash_last_rate']
                 data_df['stdev_1'] = data_df['stdev_1'] - data_df['dash_last_rate_std']
-                data_df['stdev_2'] = data_df['stdev_2'] - data_df['dash_last_rate_std']
+                if not PREDICT_ONLY_ONE_MEASURE:
+                    data_df['mean_2'] = data_df['mean_2'] - data_df['dash_last_rate']
+                    data_df['stdev_2'] = data_df['stdev_2'] - data_df['dash_last_rate_std']
 
 
     # Normalizar os dados (exceto client_id e server_id)

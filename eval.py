@@ -3,12 +3,22 @@ from sklearn.metrics import mean_absolute_percentage_error
 import joblib
 import os
 from datetime import datetime
+import time
 
-# Configurações de parâmetros
-MODEL_FILE = "random_forest_3.5F_model_10.79.pkl"
-MODEL_FILE_STD = "random_forest_model_stdevs_max_f_7.89.pkl"
-MODEL_FILE_WO_TR = "random_forest_model_10.31_wo_alldata.pkl"
-MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_7.95_wo_alldata.pkl"
+# Definições dos modelos e flags
+# MODEL_FILE = "old_models/random_forest_3.5F_model_10.79.pkl"
+MODEL_FILE = "filtered-dataset-models/random_forest_model_12.60_mean_withrtt_mergeclsv.pkl"
+
+# MODEL_FILE_STD = "old_models/random_forest_model_stdevs_max_f_7.89.pkl"
+MODEL_FILE_STD = "filtered-dataset-models/random_forest_model_stdevs_9.31_with_rtt_mergeclsv.pkl"
+
+# MODEL_FILE_WO_TR = "old_models/random_forest_model_10.31_wo_alldata.pkl"
+# MODEL_FILE_WO_TR = "random_forest_model_7.18_mean_wortt2.pkl"
+MODEL_FILE_WO_TR = "filtered-dataset-models/random_forest_model_12.60_mean_withrtt_mergeclsv.pkl"
+
+# MODEL_FILE_WO_TR_STD = "old_models/random_forest_model_stdevs_7.95_wo_alldata.pkl"
+# MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_6.41_wortt.pkl"
+MODEL_FILE_WO_TR_STD = "filtered-dataset-models/random_forest_model_stdevs_9.31_with_rtt_mergeclsv.pkl"
 
 USE_ONLY_AVG = False
 USE_AVG_WHEN_NO_TR = False
@@ -19,7 +29,7 @@ MODEL_PREDICTS_ONLY_FIRST_MEAN = False
 DIFF_MODELS_FOR_MEAN_STD = True
 
 USE_AVG_FOR_ALL_STDEV_WHEN_NO_TR = False
-USE_DIFF_MODELS_WHEN_NO_TR = True
+USE_DIFF_MODELS_WHEN_NO_TR = False
 
 USING_RESULT_AS_DIFF_FROM_LAST = False
 COLUMN_ID_LAST_RATE_MEAN=22
@@ -29,6 +39,9 @@ USING_DIFF_FROM_AVG = False
 DISCARD_AVG = False  # Use for KNN
 
 USE_MOVING_AVG = False
+
+global prediction_counter
+prediction_counter = 0
 
 def load_data_for_prediction(input_csv):
     """
@@ -80,7 +93,9 @@ def calc_predictions(data_df, X, model, model_std, model_wo, model_wo_std):
                         'dash2_rate_mean', 'dash2_rate_stdev', 'dash3_rate_mean', 'dash3_rate_stdev', 'dash4_rate_mean', 'dash4_rate_stdev',
                         'dash5_rate_mean', 'dash5_rate_stdev', 'dash6_rate_mean', 'dash6_rate_stdev', 'dash7_rate_mean', 'dash7_rate_stdev',
                         'dash8_rate_mean', 'dash8_rate_stdev', 'dash9_rate_mean', 'dash9_rate_stdev', 'dash_last_rate', 'dash_last_rate_std',
-                        'rates_mean', 'rates_stdev'
+                        'rtt0_mean', 'rtt0_stdev','rtt1_mean', 'rtt1_stdev', 'rtt2_mean', 'rtt2_stdev', 'rtt3_mean', 'rtt3_stdev', 'rtt4_mean', 
+                        'rtt4_stdev', 'tr0_rtt_sum', 'tr0_rtt_stdev', 'tr1_rtt_sum', 'tr1_rtt_stdev', 'tr2_rtt_sum', 'tr2_rtt_stdev', 'tr3_rtt_sum', 
+                        'tr3_rtt_stdev', 'tr4_rtt_sum', 'tr4_rtt_stdev', 'tr_jumps_std', 'rates_mean', 'rates_stdev'
                     ]
                     X_row = row[columns_to_select].values.reshape(1, -1)
                     y_mean = make_predictions(model_wo, X_row).flatten().tolist()
@@ -142,7 +157,10 @@ def calc_predictions(data_df, X, model, model_std, model_wo, model_wo_std):
     return pd.DataFrame(predictions, columns=['mean_1', 'stdev_1', 'mean_2', 'stdev_2'])
 
 def make_predictions(model, X):
+    time_0 = time.perf_counter()
     y_pred = model.predict(X)
+    global prediction_counter
+    prediction_counter += time.perf_counter() - time_0
     return y_pred
 
 def save_predictions_to_csv(ids, predictions, output_dir="eval"):
@@ -205,6 +223,8 @@ def main():
 
     print(f"Total number of files: {num_files}")
     print(f"Number of files without RTT or TR: {num_files_wo_rtt_tr}")
+    global prediction_counter
+    print(f"Total time making predictions: {prediction_counter:.5} seconds")
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,12 @@ converted_input
 */eval
 *.csv
 tuner_results
+*.pdf
+*.png
+output/*
+
+analysis*.txt
+*.joblib
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

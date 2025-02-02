@@ -1,116 +1,151 @@
+import os
 import pandas as pd
+import numpy as np
+import random
+import time
+from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_percentage_error
 import joblib
-import os
-import numpy as np
 
 USING_RESULT_AS_DIFF = False
 USING_RESULT_AS_DIFF_FROM_LAST = False
-COLUMN_ID_LAST_RATE_MEAN=22
-COLUMN_ID_LAST_RATE_STD=23
+COLUMN_ID_LAST_RATE_MEAN = 22
+COLUMN_ID_LAST_RATE_STD = 23
 
-LEARN_ONLY_MEAN = False  # Modelo predirá apenas dois valores: mean_1 e mean_2
-LEARN_ONLY_FIRST_MEAN = False  # Modelo predirá apenas um valor: mean_1
-LEARN_ONLY_STDEV = True # Modelo predirá apenas dois valores: stdev_1 e stdev_2
+CONSIDERING_RTT_TR = False
+BEST_PARAMS_PATH = "best_params_rf_wo.joblib"
 
-def load_data_from_csv(input_csv):
-    data_df = pd.read_csv(input_csv)
+def load_best_params():
+    if os.path.exists(BEST_PARAMS_PATH):
+        return joblib.load(BEST_PARAMS_PATH)
+    return {}
 
-    columns_to_keep = [
-        'rates_mean', 'dash_last_rate', 'rtt0_mean', 'tr0_rtt_sum', 
-        'tr0_rtt_stdev', 'dash_last_rate_std', 'dash8_rate_mean', 
-        'rates_stdev', 'server_id', 'dash0_rate_mean', 
-        'dash9_rate_mean', 'dash3_rate_mean'
-    ]
+def save_best_params(d):
+    joblib.dump(d, BEST_PARAMS_PATH)
 
-    X = data_df.iloc[:, :-4].values
-    y = data_df.iloc[:, -4:].values
+def load_data(input_csv):
+    df = pd.read_csv(input_csv)
+    X = df.iloc[:, :-4].values
+    y = df.iloc[:, -4:].values
+    return X, y, df.columns[:-4]
 
-    if LEARN_ONLY_MEAN:
-        y = data_df.iloc[:, [-4, -2]].values
-    elif LEARN_ONLY_FIRST_MEAN:
-        y = data_df.iloc[:, -4].values
-    elif LEARN_ONLY_STDEV:
-        y = data_df.iloc[:, [-3, -1]].values
+def split_data(X, y, seed):
+    return train_test_split(X, y, test_size=0.25, random_state=seed)
 
-    # Dividindo os dados em treinamento (75%) e teste (25%)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+def create_output_folder():
+    folder = os.path.join("output", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
-    return X_train, X_test, y_train, y_test, data_df.columns[:-4]
-
-def train_random_forest(X_train, y_train):
-    rf = RandomForestRegressor(random_state=42)
+def get_best_params_for_column(X_train, y_train, seed, column_id, best_params_dict):
+    if column_id in best_params_dict:
+        return best_params_dict[column_id]
+    rf = RandomForestRegressor(random_state=seed)
     param_grid = {
-        'max_features': [0.3, 0.5, 0.75, 0.9],
-        'n_estimators': [200],
-        'max_depth': [5, 10, 20],
-        'min_samples_split': [2, 10],
-        'min_samples_leaf': [4, 10]
+        'max_features': [0.3, "sqrt"],
+        'n_estimators': [500],
+        'max_depth': [None, 20],
+        'min_samples_split': [2],
+        'min_samples_leaf': [1, 10]
     }
-    grid_search = GridSearchCV(rf, param_grid, cv=5, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=1)
-    
-    try:
-        grid_search.fit(X_train, y_train)
-    except Exception as e:
-        raise e
+    start_time = time.perf_counter()
+    gs = GridSearchCV(rf, param_grid, cv=2, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=0)
+    gs.fit(X_train, y_train)
+    elapsed_time = time.perf_counter() - start_time
+    print(f"Hyperparameter search time for column {column_id}: {elapsed_time:.3f}s")
+    best_params_dict[column_id] = gs.best_params_
+    save_best_params(best_params_dict)
+    return best_params_dict[column_id]
 
-    print(f"Melhores parâmetros: {grid_search.best_params_}")
-    return grid_search.best_estimator_
+def build_model_with_params(best_params, seed):
+    return RandomForestRegressor(
+        random_state=seed,
+        max_depth=best_params.get('max_depth'),
+        max_features=best_params.get('max_features'),
+        n_estimators=best_params.get('n_estimators'),
+        min_samples_split=best_params.get('min_samples_split'),
+        min_samples_leaf=best_params.get('min_samples_leaf')
+    )
 
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
-
-    y_pred_adj = []
-    y_test_adj = []
-
     if USING_RESULT_AS_DIFF_FROM_LAST:
-        for x_row in X_test:
+        y_pred_adj = []
+        y_test_adj = []
+        for x_row, real_val, pred_val in zip(X_test, y_test, y_pred):
             last_mean = x_row[COLUMN_ID_LAST_RATE_MEAN]
             last_std = x_row[COLUMN_ID_LAST_RATE_STD]
-            if LEARN_ONLY_MEAN:
-                y_pred_adj += [y_pred[0] + last_mean, y_pred[1] + last_mean]
-                y_test_adj += [y_test[0] + last_mean, y_test[1] + last_mean]
-            elif LEARN_ONLY_STDEV:
-                y_pred_adj += [y_pred[0] + last_std, y_pred[1] + last_std]
-                y_test_adj += [y_test[0] + last_std, y_test[1] + last_std]
+            diff_base = last_std if (COLUMN_ID_LAST_RATE_STD == COLUMN_ID_LAST_RATE_STD) else last_mean
+            y_pred_adj.append(pred_val + diff_base)
+            y_test_adj.append(real_val + diff_base)
         y_pred = y_pred_adj
         y_test = y_test_adj
+    return mean_absolute_percentage_error(y_test, y_pred)
 
-    mape = mean_absolute_percentage_error(y_test, y_pred)
-    print(f"MAPE: {mape * 100:.2f}%")
-    return f"{mape * 100:.2f}"
-
-def print_feature_importance(model, feature_names):
+def feature_importance_string(model, feature_names):
     importances = model.feature_importances_
     indices = np.argsort(importances)[::-1]
+    return "<>".join([f"{feature_names[i]}={importances[i]:.4f}" for i in indices])
 
-    print("\nImportâncias das Features:")
-    for i in indices:
-        print(f"{feature_names[i]}: {importances[i]:.4f}")
+def save_csv(csv_path, line):
+    exists = os.path.exists(csv_path)
+    with open(csv_path, "a" if exists else "w", encoding="utf-8") as f:
+        if not exists:
+            f.write("Model;MeanOrStd?;ConsiderRTT_TR?;MAPE;Seed;FeatureImportance;MaxDepth;MaxFeatures|ColSampleByTree;MinSampleLeaf|LearningRate;MinSamplesSplit|Subsample;NumEstimators;TrainTime\n")
+        f.write(line + "\n")
 
-def save_model(model, model_file):
+def execute_training_by_column(X, y, feature_names, column, csv_name, seed, folder, best_params_dict):
+    X_train, X_test, y_train, y_test = split_data(X, y[:, column], seed)
+    col_best_params = get_best_params_for_column(X_train, y_train, seed, column, best_params_dict)
+    model = build_model_with_params(col_best_params, seed)
+    start_fit = time.perf_counter()
+    model.fit(X_train, y_train)
+    fit_time = time.perf_counter() - start_fit
+    mape = evaluate_model(model, X_test, y_test)
+    feats = feature_importance_string(model, feature_names)
+    line = ";".join([
+        "RF",
+        csv_name.replace(".csv", ""),
+        str(CONSIDERING_RTT_TR),
+        f"{mape:.6f}",
+        str(seed),
+        feats,
+        str(col_best_params.get("max_depth", "")),
+        str(col_best_params.get("max_features", "")),
+        str(col_best_params.get("min_samples_leaf", "")),
+        str(col_best_params.get("min_samples_split", "")),
+        str(col_best_params.get("n_estimators", "")),
+        f"{fit_time:.4f}"
+    ])
+    save_csv(os.path.join(folder, csv_name), line)
+    save_model(model, column, seed, mape)
+
+
+def save_model(model, column, seed, mape):
+    mape_str = f"{mape * 100:.2f}%"
+    model_file = f"RF_{column}_{seed}_{mape_str}.pkl"
     joblib.dump({'model': model}, model_file)
     print(f"Modelo salvo em {model_file}")
 
-def main():
-    input_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../prepared_data.csv")
+def run_once(folder, seed):
+    base_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../prepared_data.csv")
+    X, y, feature_names = load_data(base_csv)
+    best_params_dict = load_best_params()
+    execute_training_by_column(X, y, feature_names, -4, "mean_1.csv", seed, folder, best_params_dict)
+    execute_training_by_column(X, y, feature_names, -3, "std_1.csv", seed, folder, best_params_dict)
+    execute_training_by_column(X, y, feature_names, -2, "mean_2.csv", seed, folder, best_params_dict)
+    execute_training_by_column(X, y, feature_names, -1, "std_2.csv", seed, folder, best_params_dict)
 
-    X_train, X_test, y_train, y_test, feature_names = load_data_from_csv(input_csv)
-    
-    print("Treinando o modelo Random Forest...")
-    best_rf = train_random_forest(X_train, y_train)
-    
-    print("Avaliando o modelo com MAPE...")
-    mape = evaluate_model(best_rf, X_test, y_test)
-
-    print_feature_importance(best_rf, feature_names)
-    
-    suffix = "_stdevs" if LEARN_ONLY_STDEV else ""
-    model_file = f"random_forest_model{suffix}_{mape}.pkl"
-    save_model(best_rf, model_file)
+def loop_exec(n):
+    folder = create_output_folder()
+    seeds = [665, 616, 617, 232, 84, 230, 383, 887, 617, 531, 496]  # Predefined seeds
+    # To switch back to random seeds, comment the above line and uncomment the next line:
+    # seeds = [random.randint(1, 1000) for _ in range(n)]
+    for seed in seeds:
+        print(f"Seed: {seed}")
+        run_once(folder, seed)
 
 if __name__ == "__main__":
-    main()
+    loop_exec(11)
