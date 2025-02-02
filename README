@@ -1,0 +1,214 @@
+# Network Performance Prediction using RNP Rede IPÊ Data
+
+This repository contains the code and data processing pipeline for our scientific research on network performance prediction using measurements from RNP Rede IPÊ. The main objective is to predict future network states—specifically, the bitrate mean and standard deviation—by leveraging data from DASH, RTT, and Traceroute measurements.
+
+The repository covers the full workflow from data pre-processing and feature engineering to machine learning (ML) model training, evaluation, statistical analysis, and inference time measurement.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Repository Structure](#repository-structure)
+- [Data](#data)
+- [Methodology](#methodology)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Data Pre-processing](#data-pre-processing)
+  - [Feature Engineering](#feature-engineering)
+  - [Machine Learning Training](#machine-learning-training)
+  - [Statistical Analysis](#statistical-analysis)
+  - [Inference Time Measurement](#inference-time-measurement)
+- [Hyperparameter Tuning](#hyperparameter-tuning)
+- [Contributing](#contributing)
+
+---
+
+## Overview
+
+This project aims to predict future network performance by modeling four predictive tasks related to bitrate:
+- **`mean_1` and `stdev_1`**: Mean and standard deviation of bitrate 5 minutes into the future (corresponding to $t+1$).
+- **`mean_2` and `stdev_2`**: Mean and standard deviation of bitrate 10 minutes into the future (corresponding to $t+2$).
+
+Two feature configurations are explored:
+- **Base (DASH-only):** Uses features derived solely from DASH measurements.
+- **Enriched (DASH + RTT + Traceroute):** Incorporates additional network signals from RTT and Traceroute.
+
+We employ Random Forest (RF) and XGBoost algorithms, with systematic hyperparameter tuning via GridSearch and cross-validation using Mean Absolute Percentage Error (MAPE) as the evaluation metric.
+
+---
+
+## Repository Structure
+
+```
+├── dataset/Train
+│   ├── dash
+│   │   └── [client]/[server]/<measurement files named by datetime>
+│   ├── rtt
+│   │   └── [client]/<measurement files named by datetime>
+│   └── traceroute
+│       └── [client]/<measurement files named by datetime>
+├── gen_jsons.py               # Compiles measurements from DASH and MonIPÊ into 1-hour windows (JSON output)
+├── prepare.py                 # Reads JSONs and applies feature engineering, outputting a CSV file for ML training
+├── random_forest
+│   └── learn.py               # Trains a Random Forest model (includes hyperparameter tuning)
+├── xgboost
+│   └── learn.py               # Trains an XGBoost model (includes hyperparameter tuning)
+├── statistical-analysis
+│   ├── gen_statistics.py     # Performs Kruskal-Wallis H test on evaluation results
+│   ├── gen_graph_importances.py    # Generates graphs and plots for performance metrics and feature importances
+│   └── gen_mape.py  # Computes means and standard deviations for MAPE across multiple runs
+└── inference_time.py          # Measures and reports the inference time for predicting bitrate mean and std
+```
+
+---
+
+## Data
+
+The dataset is organized in the `dataset` folder into three subfolders:
+- **dash:** Contains DASH measurement files.
+- **rtt:** Contains RTT measurement files.
+- **traceroute:** Contains Traceroute measurement files.
+
+Each folder is further structured by client and server, and individual measurement files are named based on the datetime of the measurement.
+
+---
+
+## Methodology
+
+1. **Data Synchronization and Slotting:**  
+   - **Synchronization:** DASH and MonIPÊ data are synchronized. DASH measurements are recorded every 5 minutes.
+   - **Windowing:** Data is grouped into 1-hour slots with partial overlap to maintain continuity. Each slot includes data in the interval \([t_0, t_0 + 1\,\text{hour}]\), with the last half of each slot used in the subsequent window.
+   - **Filtering:** Only slots with at least 10 valid DASH measurements and 5 valid RTT and Traceroute measurements are retained (resulting in 21,939 usable slots).
+
+2. **Feature Engineering:**  
+   - Extract features such as means, standard deviations, and incremental differences for bitrate.
+   - For the Enriched configuration, additional features from RTT (e.g., RTT statistics) and Traceroute (e.g., summed RTT across hops, hop count variability) are incorporated.
+
+3. **Predictive Targets:**  
+   - **Predictive Tasks:** Model the four targets (\texttt{mean\_1}, \texttt{stdev\_1}, \texttt{mean\_2}, and \texttt{stdev\_2}) corresponding to network states 5 and 10 minutes in the future.
+
+4. **Machine Learning:**  
+   - **Algorithms:** Both RF and XGBoost models are trained.
+   - **Hyperparameter Tuning:** Systematic GridSearch with cross-validation minimizes the Mean Absolute Percentage Error (MAPE).
+   - **Model Training:** The final models are retrained on 75% of the data (training set), with the remaining 25% held out for testing.
+
+5. **Statistical Analysis:**  
+   - Analysis scripts evaluate model performance (e.g., MAPE), perform statistical tests like the Kruskal-Wallis H test, and generate visualizations.
+
+6. **Inference:**  
+   - The `inference_time.py` script measures the time taken per prediction (for bitrate mean and std), reporting both the average and standard deviation.
+
+---
+
+## Installation
+
+1. **Clone the Repository:**
+
+   ```bash
+   git clone https://github.com/eduardoperetto/AI-data-challenge.git
+   cd AI-data-challenge
+   ```
+
+2. **Create a Virtual Environment (Optional but Recommended):**
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows use: venv\Scripts\activate
+   ```
+
+3. **Install Required Dependencies:**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+   *Note: Make sure the `requirements.txt` file includes all necessary libraries such as `numpy`, `pandas`, `scikit-learn`, `xgboost`, `matplotlib`, etc.*
+
+---
+
+## Usage
+
+### Data Pre-processing
+
+1. **Compile Measurements into Windows:**
+
+   Run the `gen_jsons.py` script to aggregate raw data into 1-hour slots:
+
+   ```bash
+   python gen_jsons.py
+   ```
+
+   This will create JSON files with the synchronized data from DASH and MonIPÊ.
+
+### Feature Engineering
+
+2. **Generate Feature CSV:**
+
+   Run the `prepare.py` script to apply feature engineering on the JSON files and produce a CSV file used for ML training:
+
+   ```bash
+   python prepare.py
+   ```
+
+   Use the available flags to control feature selection and configuration (Base vs. Enriched).
+
+### Machine Learning Training
+
+3. **Train ML Models:**
+
+   The repository includes folders for different ML algorithms. For example, to train a Random Forest model:
+
+   ```bash
+   cd random_forest
+   python learn.py
+   ```
+
+   Similarly, navigate to the `xgboost`, `knn`, or `neural-network` folders to train models using those algorithms. Each `learn.py` script splits the data into training (75%) and testing (25%) sets, performs hyperparameter tuning, and searches for the configuration that minimizes MAPE.
+
+### Statistical Analysis
+
+4. **Run Statistical Analysis:**
+
+   The `statistical-analysis` folder contains scripts for further evaluation. Copy the output CSV file generated by multiple ML training evaluation to this folder, and run the scripts to generate the analysis. For example:
+
+   ```bash
+   cd statistical-analysis
+   python gen_statistics.py
+   ```
+
+   The scripts in this folder generate performance graphs, conduct the Kruskal-Wallis H test, and calculate aggregate metrics (e.g., mean and standard deviation of MAPE and feature importances across multiple runs).
+
+### Inference Time Measurement
+
+5. **Measure Inference Time:**
+
+   Run the inference script to evaluate the prediction speed:
+
+   ```bash
+   python inference_time.py
+   ```
+
+   The script processes each row of the CSV input and reports the mean and standard deviation of the inference time for predicting bitrate metrics.
+
+---
+
+## Hyperparameter Tuning
+
+Both Random Forest and XGBoost models are tuned via GridSearch:
+- **Random Forest:** Evaluates the number of trees and maximum tree depth.
+- **XGBoost:** Includes additional hyperparameters such as learning rate, subsample ratio, and column sample per tree.
+
+Cross-validation is used during the tuning process to ensure robust performance and to minimize the Mean Absolute Percentage Error (MAPE). The best configuration for each predictive task is then applied to retrain the final model on the complete training set.
+
+---
+
+## Contributing
+
+Contributions are welcome! If you wish to improve the code or add new features, please follow these steps:
+
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature-name`).
+3. Make your changes and commit them (`git commit -m 'Add new feature'`).
+4. Push to the branch (`git push origin feature-name`).
+5. Open a Pull Request.
