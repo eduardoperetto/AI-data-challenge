@@ -42,6 +42,8 @@ DISCARD_FILES_W_TR_OR_RTT = False and not EVALUATING # Descarta todos os arquivo
 DISCARD_FILES_WO_RTT = True and not EVALUATING # Descarta todos os arquivos que NÃO têm RTT
 DISCARD_FILES_WO_TR = True and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
 
+PREDICT_ONLY_ONE_MEASURE = False
+
 def calc_diff(current, previous):
     return current - previous
 
@@ -453,18 +455,24 @@ def save_to_csv(all_data, output_csv):
             # Reorganizar as colunas para mover 'mean_1', 'stdev_1', 'mean_2', 'stdev_2'
             # após 'rates_mean' e 'rates_stdev'
             ordered_columns = [col for col in data_df.columns if col not in ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']]
-            ordered_columns += ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+            if PREDICT_ONLY_ONE_MEASURE:
+                ordered_columns += ['mean_1', 'stdev_1']
+            else:
+                ordered_columns += ['mean_1', 'stdev_1', 'mean_2', 'stdev_2']
+
             data_df = data_df[ordered_columns]
             if RESULT_TO_DIFF_FROM_AVG:
                 data_df['mean_1'] = data_df['mean_1'] - data_df['rates_mean']
-                data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
                 data_df['stdev_1'] = data_df['stdev_1'] - data_df['rates_stdev']
-                data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
+                if not PREDICT_ONLY_ONE_MEASURE:
+                    data_df['mean_2'] = data_df['mean_2'] - data_df['rates_mean']
+                    data_df['stdev_2'] = data_df['stdev_2'] - data_df['rates_stdev']
             elif RESULT_TO_DIFF_FROM_LAST:
                 data_df['mean_1'] = data_df['mean_1'] - data_df['dash_last_rate']
-                data_df['mean_2'] = data_df['mean_2'] - data_df['dash_last_rate']
                 data_df['stdev_1'] = data_df['stdev_1'] - data_df['dash_last_rate_std']
-                data_df['stdev_2'] = data_df['stdev_2'] - data_df['dash_last_rate_std']
+                if not PREDICT_ONLY_ONE_MEASURE:
+                    data_df['mean_2'] = data_df['mean_2'] - data_df['dash_last_rate']
+                    data_df['stdev_2'] = data_df['stdev_2'] - data_df['dash_last_rate_std']
 
 
     # Normalizar os dados (exceto client_id e server_id)

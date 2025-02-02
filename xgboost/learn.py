@@ -1,157 +1,159 @@
-import pandas as pd
-import numpy as np
 import os
-import joblib
-import random
 import time
-
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import mean_absolute_percentage_error
-
-# 1) Import XGBRegressor
+import random
+import joblib
+import numpy as np
+import pandas as pd
+from datetime import datetime
 from xgboost import XGBRegressor
+from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.model_selection import GridSearchCV, train_test_split
 
 USING_RESULT_AS_DIFF = False
 USING_RESULT_AS_DIFF_FROM_LAST = False
 COLUMN_ID_LAST_RATE_MEAN = 22
 COLUMN_ID_LAST_RATE_STD = 23
 
-LEARN_ONLY_MEAN = False  # Modelo predirá apenas dois valores: mean_1 e mean_2
-LEARN_ONLY_FIRST_MEAN = False  # Modelo predirá apenas um valor: mean_1
-LEARN_ONLY_STDEV = True  # Modelo predirá apenas dois valores: stdev_1 e stdev_2
+CONSIDERING_RTT_TR = False
 
-def load_data_from_csv(input_csv, seed):
-    data_df = pd.read_csv(input_csv)
+BEST_PARAMS_XGBOOST_PATH = "best_params_xgboost.joblib"
 
-    X = data_df.iloc[:, :-4].values
-    y = data_df.iloc[:, -4:].values
+def load_best_params_xgboost():
+    if os.path.exists(BEST_PARAMS_XGBOOST_PATH):
+        return joblib.load(BEST_PARAMS_XGBOOST_PATH)
+    return {}
 
-    if LEARN_ONLY_MEAN:
-        y = data_df.iloc[:, [-4, -2]].values
-    elif LEARN_ONLY_FIRST_MEAN:
-        y = data_df.iloc[:, -4].values
-    elif LEARN_ONLY_STDEV:
-        y = data_df.iloc[:, [-3, -1]].values
+def save_best_params_xgboost(d):
+    joblib.dump(d, BEST_PARAMS_XGBOOST_PATH)
 
-    # Dividindo os dados em treinamento (75%) e teste (25%)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=seed
-    )
-    print(f"Random state (seed) = {seed}")
+def load_data(input_csv):
+    df = pd.read_csv(input_csv)
+    X = df.iloc[:, :-4].values
+    y = df.iloc[:, -4:].values
+    return X, y, df.columns[:-4]
 
-    return X_train, X_test, y_train, y_test, data_df.columns[:-4]
+def split_data(X, y, seed):
+    return train_test_split(X, y, test_size=0.25, random_state=seed)
 
-# 2) Define a function to train XGBoost using GridSearchCV
-def train_xgboost(X_train, y_train, seed):
-    xgb_model = XGBRegressor(
-        random_state=seed,
-        objective="reg:squarederror"  # objective for regression
-    )
-    
-    # Adjust these hyperparameter ranges as needed
+def create_output_folder():
+    folder = os.path.join("output", "XGB_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+def get_best_params_for_column_xgboost(X_train, y_train, seed, column_id, best_params_dict):
+    if column_id in best_params_dict:
+        return best_params_dict[column_id]
+    xgb_model = XGBRegressor(random_state=seed, objective="reg:squarederror")
     param_grid = {
-        "n_estimators": [100],
-        "max_depth": [5],
-        "learning_rate": [0.1],
-        "subsample": [1.0],
-        "colsample_bytree": [0.3],
+        "n_estimators": [100, 500],
+        "max_depth": [3, 5],
+        "learning_rate": [0.01, 0.1, 0.3],
+        "subsample": [0.75,1.0],
+        "colsample_bytree": [0.3, 0.5, 1.0]
     }
-
     start_time = time.perf_counter()
-    
-    grid_search = GridSearchCV(
-        xgb_model, 
-        param_grid, 
-        cv=2, 
-        scoring="neg_mean_absolute_error", 
-        n_jobs=2, 
+    gs = GridSearchCV(
+        xgb_model,
+        param_grid,
+        cv=2,
+        scoring="neg_mean_absolute_error",
+        n_jobs=2,
         verbose=1
     )
-    
-    try:
-        grid_search.fit(X_train, y_train)
-    except Exception as e:
-        raise e
-    
+    gs.fit(X_train, y_train)
     elapsed_time = time.perf_counter() - start_time
-    print(f"Elapsed time: {elapsed_time:.3f} seconds")
+    print(f"Hyperparameter search time for column {column_id}: {elapsed_time:.3f}s")
+    best_params_dict[column_id] = gs.best_params_
+    save_best_params_xgboost(best_params_dict)
+    return best_params_dict[column_id]
 
-    print(f"Melhores parâmetros: {grid_search.best_params_}")
-    return grid_search.best_estimator_
+def build_xgboost_with_params(best_params, seed):
+    return XGBRegressor(
+        random_state=seed,
+        objective="reg:squarederror",
+        n_estimators=best_params.get("n_estimators"),
+        max_depth=best_params.get("max_depth"),
+        learning_rate=best_params.get("learning_rate"),
+        subsample=best_params.get("subsample"),
+        colsample_bytree=best_params.get("colsample_bytree")
+    )
 
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
-
-    y_pred_adj = []
-    y_test_adj = []
-
-    # Caso o resultado esteja configurado para ser a diferença do último valor
     if USING_RESULT_AS_DIFF_FROM_LAST:
-        for x_row, target_row, pred_row in zip(X_test, y_test, y_pred):
+        y_pred_adj = []
+        y_test_adj = []
+        for x_row, real_val, pred_val in zip(X_test, y_test, y_pred):
             last_mean = x_row[COLUMN_ID_LAST_RATE_MEAN]
             last_std = x_row[COLUMN_ID_LAST_RATE_STD]
-            if LEARN_ONLY_MEAN:
-                # Se estivéssemos prevendo dois meios (ex: mean_1, mean_2)
-                # Ajustando cada posição do y_pred para que o resultado final seja cumulativo
-                y_pred_adj += [pred_row[0] + last_mean, pred_row[1] + last_mean]
-                y_test_adj += [target_row[0] + last_mean, target_row[1] + last_mean]
-            elif LEARN_ONLY_STDEV:
-                # Se estivéssemos prevendo dois desvios padrão
-                y_pred_adj += [pred_row[0] + last_std, pred_row[1] + last_std]
-                y_test_adj += [target_row[0] + last_std, target_row[1] + last_std]
+            diff_base = last_std if (COLUMN_ID_LAST_RATE_STD == COLUMN_ID_LAST_RATE_STD) else last_mean
+            y_pred_adj.append(pred_val + diff_base)
+            y_test_adj.append(real_val + diff_base)
         y_pred = y_pred_adj
         y_test = y_test_adj
+    return mean_absolute_percentage_error(y_test, y_pred)
 
-    mape = mean_absolute_percentage_error(y_test, y_pred)
-    print(f"MAPE: {mape * 100:.2f}%")
-    return mape
-
-def print_feature_importance(model, feature_names):
+def feature_importance_string(model, feature_names):
     importances = model.feature_importances_
     indices = np.argsort(importances)[::-1]
+    return "<>".join([f"{feature_names[i]}={importances[i]:.4f}" for i in indices])
 
-    print("\nImportâncias das Features:")
-    for i in indices:
-        print(f"{feature_names[i]}: {importances[i]:.4f}")
+def save_csv(csv_path, line):
+    exists = os.path.exists(csv_path)
+    with open(csv_path, "a" if exists else "w", encoding="utf-8") as f:
+        if not exists:
+            f.write("Model;MeanOrStd?;ConsiderRTT_TR?;MAPE;Seed;FeatureImportance;MaxDepth;MaxFeatures|ColSampleByTree;MinSampleLeaf|LearningRate;MinSamplesSplit|Subsample;NumEstimators;TrainTime\n")
+        f.write(line + "\n")
 
-def save_model(model, model_file):
-    joblib.dump({"model": model}, model_file)
+def execute_xgboost_training_by_column(X, y, feature_names, column, csv_name, seed, folder, best_params_dict):
+    X_train, X_test, y_train, y_test = split_data(X, y[:, column], seed)
+    col_best_params = get_best_params_for_column_xgboost(X_train, y_train, seed, column, best_params_dict)
+    model = build_xgboost_with_params(col_best_params, seed)
+    start_fit = time.perf_counter()
+    model.fit(X_train, y_train)
+    fit_time = time.perf_counter() - start_fit
+    mape = evaluate_model(model, X_test, y_test)
+    feats = feature_importance_string(model, feature_names)
+    line = ";".join([
+        "XGB",
+        csv_name.replace(".csv", ""),
+        str(CONSIDERING_RTT_TR),
+        f"{mape:.6f}",
+        str(seed),
+        feats,
+        str(col_best_params.get("max_depth", "")),
+        str(col_best_params.get("colsample_bytree", "")),
+        str(col_best_params.get("learning_rate", "")),
+        str(col_best_params.get("subsample", "")),
+        str(col_best_params.get("n_estimators", "")),
+        f"{fit_time:.4f}"
+    ])
+    save_csv(os.path.join(folder, csv_name), line)
+    save_model(model, column, seed, mape)
+
+def save_model(model, column, seed, mape):
+    mape_str = f"{mape * 100:.2f}%"
+    model_file = f"XGB_{column}_{seed}_{mape_str}.pkl"
+    joblib.dump({'model': model}, model_file)
     print(f"Modelo salvo em {model_file}")
 
-def rand_seed():
-    return random.randint(1,1000)
+def run_once(folder, seed):
+    base_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../prepared_data.csv")
+    X, y, feature_names = load_data(base_csv)
+    best_params_dict = load_best_params_xgboost()
+    execute_xgboost_training_by_column(X, y, feature_names, -4, "mean_1.csv", seed, folder, best_params_dict)
+    execute_xgboost_training_by_column(X, y, feature_names, -3, "std_1.csv", seed, folder, best_params_dict)
+    execute_xgboost_training_by_column(X, y, feature_names, -2, "mean_2.csv", seed, folder, best_params_dict)
+    execute_xgboost_training_by_column(X, y, feature_names, -1, "std_2.csv", seed, folder, best_params_dict)
 
-def main(seed = rand_seed()):
-    input_csv = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 
-        "../prepared_data.csv"
-    )
-
-    X_train, X_test, y_train, y_test, feature_names = load_data_from_csv(input_csv, seed)
-    
-    print("Treinando o modelo XGBoost...")
-    best_xgb = train_xgboost(X_train, y_train, seed)
-    
-    print("Avaliando o modelo com MAPE...")
-    mape = evaluate_model(best_xgb, X_test, y_test)
-    mape_str = f"{mape * 100:.2f}"
-
-    print_feature_importance(best_xgb, feature_names)
-    
-    suffix = "_stdevs" if LEARN_ONLY_STDEV else ""
-    if LEARN_ONLY_MEAN:
-        suffix = "_mean" 
-    model_file = f"xgboost_model{suffix}_{mape_str}.pkl"
-    # save_model(best_xgb, model_file)
-    print("\n")
-    return mape
-
-
-def loop_exec(n_exec):
-    mapes = []
-    for i in range(n_exec):
-        mapes.append(main(seed=rand_seed()))
-    print(f"Average MAPEs: {np.mean(mapes)}")
+def loop_exec(n):
+    folder = create_output_folder()
+    seeds = [665, 616, 617, 232, 84, 230, 383, 887, 617, 531, 496]  # Predefined seeds
+    # To switch back to random seeds, comment the above line and uncomment the next line:
+    # seeds = [random.randint(1, 1000) for _ in range(n)]
+    for seed in seeds:
+        print(f"Seed: {seed}")
+        run_once(folder, seed)
 
 if __name__ == "__main__":
-    loop_exec(30)
+    loop_exec(11)

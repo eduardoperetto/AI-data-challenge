@@ -11,6 +11,12 @@ SERVERS = ["ce", "df", "es", "pi"]
 INTERSECT_DASH_DATA = True
 FRACTION_TO_INTERSECT = 2
 
+# Initialize global counters
+total_dash_files = 0
+total_rtt_entries = 0
+total_traceroute_entries = 0
+total_time_slots = 0
+
 def parse_filename_to_datetime(filename):
     return datetime.strptime(filename.removesuffix(".jsonl").replace('_',''), "%y%m%d%H%M")
 
@@ -31,6 +37,7 @@ def load_json_file(filepath):
         return []
 
 def extract_measures(filepaths, base_path):
+    global total_dash_files
     print(f"Extracting measures from {len(filepaths)} files under {base_path}")
     measures = []
     for file in filepaths:
@@ -45,6 +52,7 @@ def extract_measures(filepaths, base_path):
             "received": [req["received"] for req in dash_data[:-1]],
             "timestamp": [req["timestamp"] for req in dash_data[:-1]]
         })
+    total_dash_files += len(filepaths)
     return measures
 
 def filter_rtt_traceroute(data, start_ts, end_ts):
@@ -109,6 +117,7 @@ def generate_json_and_csv(timestamp, client, server, measures_dash, measures_rtt
     print(f"Files generated successfully for {client}-{server} at {output_folder}")
 
 def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
+    global total_time_slots, total_rtt_entries, total_traceroute_entries
     dash_folder = os.path.join(base_dash_path, client, server)
     if not os.path.exists(dash_folder):
         print(f"Dash folder does not exist: {dash_folder}")
@@ -118,11 +127,13 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
         print(f"No files found for {client}-{server} in {dash_folder}")
         return
     time_0 = parse_filename_to_datetime(all_files[0])
-    
+
     print(f"Processing files for {client}-{server}, starting at {time_0}, total {len(all_files)} files.")
     while all_files:
         if time_0 < datetime(2024, 6, 7): # Discard files before 2024-06-07
             all_files.remove(all_files[0])
+            if not all_files:
+                break
             time_0 = parse_filename_to_datetime(all_files[0])
             print(f"Discarded file from {time_0}")
             continue
@@ -130,7 +141,7 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
         print(f"Collected {len(current_files)} files for timeslot starting at {time_0}")
         if len(current_files) < 3:
             print(f"Not enough files in timeslot starting at {time_0}")
-            if (len(all_files) > 3):
+            if len(all_files) > 3:
                 time_0 = parse_filename_to_datetime(all_files[0])
                 continue
             else:
@@ -150,6 +161,11 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
         start_ts, end_ts = time_0.timestamp(), time_f.timestamp()
         measures_rtt = filter_rtt_traceroute(rtt_data, start_ts, end_ts)
         measures_traceroute = filter_rtt_traceroute(traceroute_data, start_ts, end_ts)
+        
+        # Update RTT and TraceRoute counters
+        total_rtt_entries += len(measures_rtt)
+        total_traceroute_entries += len(measures_traceroute)
+        
         statistics = calculate_statistics(last_2_measures)
         if statistics is not None:
             if len(measures_rtt) == 0 or len(measures_traceroute) == 0:
@@ -158,12 +174,14 @@ def process_files(client, server, base_dash_path, rtt_data, traceroute_data):
                 print("No RTT or traceroute data found for this timeslot.")
             output_folder = os.path.join(os.getcwd(), "converted_input", f"{client}", f"{server}", f"{time_0.strftime('%Y%m%d_%H%M')}")
             generate_json_and_csv(start_ts, client, server, measures_dash, measures_rtt, measures_traceroute, statistics, output_folder)
+            total_time_slots += 1  # Increment the time slots counter
         if all_files:
             if parse_filename_to_datetime(all_files[0]) != time_0:
                 time_0 = parse_filename_to_datetime(all_files[0])
             else:
                 all_files.remove(all_files[0])
-                time_0 = parse_filename_to_datetime(all_files[0])
+                if all_files:
+                    time_0 = parse_filename_to_datetime(all_files[0])
 
 def collect_files_for_time_window(all_files, start_time, time_window):
     print(f"Collecting dash files for timeslot starting at {start_time}")
@@ -217,9 +235,13 @@ def main():
                 print(f"Skipping {client}-{server} due to missing RTT or traceroute data.")
                 continue
             process_files(client, server, base_dash_path, rtt_data, traceroute_data)
-    print(f"Generated successfully on {converted_input_path}")
-    print(f"Num files generated: {num_files_gen}")
-    print(f"Num files without RTT or TR: {files_wo_rtt_tr}")
+    print(f"Generated successfully in {converted_input_path}")
+    print(f"Number of files generated: {num_files_gen}")
+    print(f"Number of files without RTT or TraceRoute: {files_wo_rtt_tr}")
+    print(f"Total DASH files considered: {total_dash_files}")
+    print(f"Total RTT measurements considered: {total_rtt_entries}")
+    print(f"Total TraceRoute measurements considered: {total_traceroute_entries}")
+    print(f"Total 1-hour window slots generated: {total_time_slots}")
 
 if __name__ == "__main__":
     main()
