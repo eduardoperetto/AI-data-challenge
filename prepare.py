@@ -5,6 +5,8 @@ import numpy as np
 import time
 from sklearn.preprocessing import StandardScaler
 
+''' FLAGS '''
+
 # Mapeamento de clientes e servidores para valores numéricos
 CLIENTS = {"ba": 0, "rj": 1}
 SERVERS = {"ce": 0, "df": 0.33, "es": 0.66, "pi": 1}
@@ -43,6 +45,8 @@ DISCARD_FILES_WO_RTT = True and not EVALUATING # Descarta todos os arquivos que 
 DISCARD_FILES_WO_TR = True and not EVALUATING # Descarta todos os arquivos que NÃO têm TraceRoute
 
 PREDICT_ONLY_ONE_MEASURE = False
+
+''' END OF FLAGS '''
 
 def calc_diff(current, previous):
     return current - previous

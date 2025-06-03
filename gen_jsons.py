@@ -8,7 +8,7 @@ import shutil
 CLIENTS = ["ba", "rj"]
 SERVERS = ["ce", "df", "es", "pi"]
 
-INTERSECT_DASH_DATA = True
+INTERSECT_DASH_DATA = False
 FRACTION_TO_INTERSECT = 2
 
 # Initialize global counters

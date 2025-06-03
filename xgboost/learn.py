@@ -9,14 +9,11 @@ from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.model_selection import GridSearchCV, train_test_split
 
-USING_RESULT_AS_DIFF = False
 USING_RESULT_AS_DIFF_FROM_LAST = False
-COLUMN_ID_LAST_RATE_MEAN = 22
-COLUMN_ID_LAST_RATE_STD = 23
 
 CONSIDERING_RTT_TR = False
 
-BEST_PARAMS_XGBOOST_PATH = "best_params_xgboost.joblib"
+BEST_PARAMS_XGBOOST_PATH = "best_params_xgboost.joblib" if CONSIDERING_RTT_TR else "best_params_xgboost_wortt.joblib"
 
 def load_best_params_xgboost():
     if os.path.exists(BEST_PARAMS_XGBOOST_PATH):
@@ -78,15 +75,15 @@ def build_xgboost_with_params(best_params, seed):
         colsample_bytree=best_params.get("colsample_bytree")
     )
 
-def evaluate_model(model, X_test, y_test):
+def evaluate_model(model, X_test, y_test, idx_last_rate, idx_last_rate_std, csv_name):
     y_pred = model.predict(X_test)
     if USING_RESULT_AS_DIFF_FROM_LAST:
         y_pred_adj = []
         y_test_adj = []
         for x_row, real_val, pred_val in zip(X_test, y_test, y_pred):
-            last_mean = x_row[COLUMN_ID_LAST_RATE_MEAN]
-            last_std = x_row[COLUMN_ID_LAST_RATE_STD]
-            diff_base = last_std if (COLUMN_ID_LAST_RATE_STD == COLUMN_ID_LAST_RATE_STD) else last_mean
+            last_mean = x_row[idx_last_rate]
+            last_std = x_row[idx_last_rate_std]
+            diff_base = last_std if ("std" in csv_name) else last_mean
             y_pred_adj.append(pred_val + diff_base)
             y_test_adj.append(real_val + diff_base)
         y_pred = y_pred_adj
@@ -105,14 +102,14 @@ def save_csv(csv_path, line):
             f.write("Model;MeanOrStd?;ConsiderRTT_TR?;MAPE;Seed;FeatureImportance;MaxDepth;MaxFeatures|ColSampleByTree;MinSampleLeaf|LearningRate;MinSamplesSplit|Subsample;NumEstimators;TrainTime\n")
         f.write(line + "\n")
 
-def execute_xgboost_training_by_column(X, y, feature_names, column, csv_name, seed, folder, best_params_dict):
+def execute_xgboost_training_by_column(X, y, feature_names, column, csv_name, seed, folder, best_params_dict, idx_last_rate, idx_last_rate_std):
     X_train, X_test, y_train, y_test = split_data(X, y[:, column], seed)
     col_best_params = get_best_params_for_column_xgboost(X_train, y_train, seed, column, best_params_dict)
     model = build_xgboost_with_params(col_best_params, seed)
     start_fit = time.perf_counter()
     model.fit(X_train, y_train)
     fit_time = time.perf_counter() - start_fit
-    mape = evaluate_model(model, X_test, y_test)
+    mape = evaluate_model(model, X_test, y_test, idx_last_rate, idx_last_rate_std, csv_name)
     feats = feature_importance_string(model, feature_names)
     line = ";".join([
         "XGB",
@@ -129,31 +126,53 @@ def execute_xgboost_training_by_column(X, y, feature_names, column, csv_name, se
         f"{fit_time:.4f}"
     ])
     save_csv(os.path.join(folder, csv_name), line)
-    save_model(model, column, seed, mape)
+    column_name = csv_name.replace('.csv', '')
+    save_model(model, column_name, seed, mape, folder)
 
-def save_model(model, column, seed, mape):
+def save_model(model, column, seed, mape, folder):
     mape_str = f"{mape * 100:.2f}%"
     model_file = f"XGB_{column}_{seed}_{mape_str}.pkl"
+    model_file = os.path.join(folder, model_file)
     joblib.dump({'model': model}, model_file)
     print(f"Modelo salvo em {model_file}")
 
 def run_once(folder, seed):
     base_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../prepared_data.csv")
     X, y, feature_names = load_data(base_csv)
+    feature_names_list = list(feature_names)
+    idx_last_rate = feature_names_list.index('dash_last_rate')
+    idx_last_rate_std = feature_names_list.index('dash_last_rate_std')
     best_params_dict = load_best_params_xgboost()
-    execute_xgboost_training_by_column(X, y, feature_names, -4, "mean_1.csv", seed, folder, best_params_dict)
-    execute_xgboost_training_by_column(X, y, feature_names, -3, "std_1.csv", seed, folder, best_params_dict)
-    execute_xgboost_training_by_column(X, y, feature_names, -2, "mean_2.csv", seed, folder, best_params_dict)
-    execute_xgboost_training_by_column(X, y, feature_names, -1, "std_2.csv", seed, folder, best_params_dict)
+    execute_xgboost_training_by_column(X, y, feature_names, -4, "mean_1.csv", seed, folder, best_params_dict, idx_last_rate, idx_last_rate_std)
+    execute_xgboost_training_by_column(X, y, feature_names, -3, "std_1.csv", seed, folder, best_params_dict, idx_last_rate, idx_last_rate_std)
+    execute_xgboost_training_by_column(X, y, feature_names, -2, "mean_2.csv", seed, folder, best_params_dict, idx_last_rate, idx_last_rate_std)
+    execute_xgboost_training_by_column(X, y, feature_names, -1, "std_2.csv", seed, folder, best_params_dict, idx_last_rate, idx_last_rate_std)
 
 def loop_exec(n):
     folder = create_output_folder()
-    seeds = [665, 616, 617, 232, 84, 230, 383, 887, 617, 531, 496]  # Predefined seeds
-    # To switch back to random seeds, comment the above line and uncomment the next line:
-    # seeds = [random.randint(1, 1000) for _ in range(n)]
+    seeds = [665, 616, 617, 232, 84, 230, 383, 887, 617, 531, 496]
     for seed in seeds:
         print(f"Seed: {seed}")
         run_once(folder, seed)
+    
+    # Calculate and print statistics after all seeds
+    print("\nFinal Results (MAPE):")
+    for csv_name in ["mean_1.csv", "std_1.csv", "mean_2.csv", "std_2.csv"]:
+        file_path = os.path.join(folder, csv_name)
+        if not os.path.exists(file_path):
+            continue
+            
+        # Read generated CSV
+        df = pd.read_csv(file_path, sep=';')
+        mape_values = df['MAPE']
+        
+        # Calculate statistics
+        mean_mape = np.mean(mape_values)
+        std_mape = np.std(mape_values, ddof=1)
+        
+        # Print in requested format
+        base_name = csv_name.replace('.csv', '')
+        print(f"{base_name}: {mean_mape:.6f} ± {std_mape:.6f}")
 
 if __name__ == "__main__":
-    loop_exec(11)
+    loop_exec(1)
