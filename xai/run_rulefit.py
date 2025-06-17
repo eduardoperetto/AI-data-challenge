@@ -1,18 +1,19 @@
 # imports and settings
 
-from argparse import ArgumentParser
-import pandas as pd
-import numpy as np
-from sklearn.metrics import mean_absolute_percentage_error
-import joblib
 import os
-from datetime import datetime
-import time
-from xgboost import XGBRegressor
-from sklearn.ensemble import RandomForestRegressor
-# from rulefit import RuleFit
-from os.path import join
+import csv
+import joblib
+import te2rules
+import numpy as np
+import pandas as pd
 from os import system
+from os.path import join
+from sklearn.tree import _tree
+from xgboost import XGBRegressor
+from argparse import ArgumentParser
+from te2rules.explainer import ModelExplainer
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.inspection import PartialDependenceDisplay
 
 ##########################################################################################
 #aux-aux functions :p
@@ -104,24 +105,12 @@ def get_files_in_folder(path_to_folder: str,
     # returning list
     return files_in_dir
 
-# auxiliary functions
-# Definições dos modelos e flags
-# MODEL_FILE = "old_models/random_forest_3.5F_model_10.79.pkl"
-MODEL_FILE = "filtered-dataset-models/random_forest_model_12.60_mean_withrtt_mergeclsv.pkl"
+########################################################################### auxiliary functions
 
-# MODEL_FILE_STD = "old_models/random_forest_model_stdevs_max_f_7.89.pkl"
-MODEL_FILE_STD = "filtered-dataset-models/random_forest_model_stdevs_9.31_with_rtt_mergeclsv.pkl"
-
-# MODEL_FILE_WO_TR = "old_models/random_forest_model_10.31_wo_alldata.pkl"
-# MODEL_FILE_WO_TR = "random_forest_model_7.18_mean_wortt2.pkl"
-MODEL_FILE_WO_TR = "filtered-dataset-models/random_forest_model_12.60_mean_withrtt_mergeclsv.pkl"
-
-# MODEL_FILE_WO_TR_STD = "old_models/random_forest_model_stdevs_7.95_wo_alldata.pkl"
-# MODEL_FILE_WO_TR_STD = "random_forest_model_stdevs_6.41_wortt.pkl"
-MODEL_FILE_WO_TR_STD = "filtered-dataset-models/random_forest_model_stdevs_9.31_with_rtt_mergeclsv.pkl"
-
-
-def model_extract_rulefit(model_path: str):
+# TODO: get y_pred and X
+def model_extract_rules(model_path: str,
+                        data_x: pd.DataFrame,
+                        data_y_pred: pd.DataFrame) -> tuple:
     """
     Given a string that is the path to a model,
     returns its rules extracted
@@ -131,33 +120,112 @@ def model_extract_rulefit(model_path: str):
     model_data = joblib.load(model_path)
     model = model_data['model']
 
+    # get feature names
+    feature_names = model.feature_names_in_
+
     # apply extraction
-    model_extract = RuleFit(model)
-    rules = model_extract.get_rules()
-    print(rules)
-    print(type(rules))
-    exit()
+    model_explainer = ModelExplainer(model=model,
+                                     feature_names=feature_names,
+                                     verbose=True
+                                    )
 
-    # TODO: verify what is the format of the rules
-    return rules
+    rules_list = model_explainer.explain(X=data_x,
+                                         y=data_y_pred,
+                                         num_stages=10,  # stages can be between 1 and max_depth
+                                         min_precision=0.95,  # higher min_precision can result in rules with more terms overfit on training data
+                                         jaccard_threshold=0.5  # lower jaccard_threshold speeds up the rule exploration, but can miss some good rules
+                                        )
 
-def models_extract_rulefit(model_paths: str):
+
+    fidelity, positive_fidelity, negative_fidelity = model_explainer.get_fidelity()
+
+    return rules_list, fidelity, positive_fidelity, negative_fidelity
+
+
+def models_extract_rules(models_folder_path:str,
+                         extension:str,
+                         output_folder:str
+                         ) -> None:
     """
-    Given a list of paths to models,
-    returns its rules extracted
+    given a directory containing models
+    returns a csv of extracted rules and fidelity metrics
     """
 
-    # df to hold rules for each model
-    models_rules_df_list = []
+    # getting masks files in respective input folder
+    model_files = get_files_in_folder(path_to_folder=models_folder_path,
+                                      extension=extension)
 
-    # looping over models
-    for model_path in model_paths:
-        model_rules = model_extract_rulefit(model_path)
+    # create empty list to hold the rule dfs
+    rules_dfs_list = []
 
-    pass
+    # create empty list to hold the rule dfs
+    fidelity_dfs_list = []
+
+    # iterating over mask files
+    for file_index, model_file in enumerate(model_files, 1):
+
+        # getting current model input path
+        model_input_path = join(models_folder_path,
+                                model_file)
+
+        # get model rules df
+        rules_list,  fidelity, positive_fidelity, negative_fidelity = model_extract_rules(model_path=)
+
+        # converting list of rules into df
+        rules_df = pd.DataFrame({'rules': rules_list})
+
+        # registering model on rules df
+        rules_df['model'] = model_file
+
+        # put fidelity metrics into dict
+        extraction_metrics_dict = {'fidelity': fidelity,
+                                   'positive_fidelity': positive_fidelity,
+                                   'negative_fidelity': negative_fidelity,
+                                   'model': model_file
+                                  }
+
+        extraction_metrics_df = pd.DataFrame(extraction_metrics_dict, index=[0])
+
+        # append current rule df to dfs list
+        rules_dfs_list.append(rules_df)
+
+        # append current fidelity df to dfs list
+        fidelity_dfs_list.append(extraction_metrics_dict)
+
+    # concatenating "dfs" from dfs lists into
+    # a pandas dataframe
+    # of the rules
+    models_rule_df = pd.concat(rules_dfs_list, ignore_index=True)
+
+    # of the fidelities
+    models_rule_df = pd.concat(rules_dfs_list, ignore_index=True)
+
+    # create the path to save the files
+    rules_output_path = join(output_folder,
+                       'models_rules.csv')
+    fidelity_output_path = join(output_folder,
+                       'models_fidelities.csv')
+
+    # saving dfs
+    models_rule_df.to_csv(rules_output_path)
+    models_rule_df.to_csv(fidelity_output_path)
+
+    # printing execution message
+    print(f'output saved to {output_folder}')
+    print('analysis complete!')
+
+    return
 
 
-def save_rules():
+def get_pdp_model(model_path: str,
+                  data_x: pd.DataFrame):
+    """
+    plot and save partial dependence plots for features
+    """
+    # load model
+    model_data = joblib.load(model_path)
+    model = model_data['model']
+    PartialDependenceDisplay.from_estimator(clf, X, features)
     pass
 #####################################################################
 # argument parsing related functions
@@ -216,7 +284,7 @@ def main():
     enter_to_continue()
 
     # running function to preprocess images in a folder
-    model_extract_rulefit(model_path=input_path)
+    model_extract_rules(model_path=input_path)
 
 
 ######################################################################
