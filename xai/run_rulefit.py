@@ -107,10 +107,9 @@ def get_files_in_folder(path_to_folder: str,
 
 ########################################################################### auxiliary functions
 
-# TODO: get y_pred and X
 def model_extract_rules(model_path: str,
-                        data_x: pd.DataFrame,
-                        data_y_pred: pd.DataFrame) -> tuple:
+                        x_data_path: str,
+                        y_pred_path: str) -> tuple:
     """
     Given a string that is the path to a model,
     returns its rules extracted
@@ -119,6 +118,12 @@ def model_extract_rules(model_path: str,
     # load model
     model_data = joblib.load(model_path)
     model = model_data['model']
+
+    # load x data
+    x_data = pd.read_csv(x_data_path)
+
+    # load predictions
+    y_pred = pd.read_csv(y_pred_path)
 
     # get feature names
     feature_names = model.feature_names_in_
@@ -129,8 +134,8 @@ def model_extract_rules(model_path: str,
                                      verbose=True
                                     )
 
-    rules_list = model_explainer.explain(X=data_x,
-                                         y=data_y_pred,
+    rules_list = model_explainer.explain(X=x_data,
+                                         y=y_pred,
                                          num_stages=10,  # stages can be between 1 and max_depth
                                          min_precision=0.95,  # higher min_precision can result in rules with more terms overfit on training data
                                          jaccard_threshold=0.5  # lower jaccard_threshold speeds up the rule exploration, but can miss some good rules
@@ -143,7 +148,9 @@ def model_extract_rules(model_path: str,
 
 
 def models_extract_rules(models_folder_path:str,
-                         extension:str,
+                         x_data_folder_path:str,
+                         predictions_folder_path:str,
+                         models_extension:str,
                          output_folder:str
                          ) -> None:
     """
@@ -151,9 +158,26 @@ def models_extract_rules(models_folder_path:str,
     returns a csv of extracted rules and fidelity metrics
     """
 
-    # getting masks files in respective input folder
+    # getting model files in respective input folder
     model_files = get_files_in_folder(path_to_folder=models_folder_path,
-                                      extension=extension)
+                                      extension=models_extension)
+
+    # getting data files in respective input folder
+    x_data_files = get_files_in_folder(path_to_folder=x_data_folder_path,
+                                       extension=models_extension)
+
+    # getting prediction files in respective input folder
+    prediction_files = get_files_in_folder(path_to_folder=predictions_folder_path,
+                                      extension=models_extension)
+
+    # TODO: repeat for data and predictions to get the iterable triplets
+    for model_file in model_files:
+        model_df = pd.DataFrame({'model_id': model_file.split('_'),
+                                 'model_file': model_file})
+
+
+
+    # pair the triplets of model, x_data and predictions
 
     # create empty list to hold the rule dfs
     rules_dfs_list = []
