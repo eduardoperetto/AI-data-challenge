@@ -321,40 +321,40 @@ def get_args_dict() -> dict:
     # adding arguments to parser
 
     # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
+    parser.add_argument('-m', '--models-input-path',
+                        dest='models_input_path',
                         required=True,
                         help='defines path to input directory containing models')
 
-    # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
+    # input x_data directory path
+    parser.add_argument('-x', '--x-datas-input-path',
+                        dest='x_datas_input_path',
                         required=True,
-                        help='defines path to input directory containing models')
+                        help='defines path to input directory containing the x_data')
+
+    # input predictions directory path
+    parser.add_argument('-y', '--y-preds-input-path',
+                        dest='y_preds_input_path',
+                        required=True,
+                        help='defines path to input directory containing the predictions')
 
     # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
+    parser.add_argument('-mx', '--model-extension',
+                        dest='model_extension',
                         required=True,
-                        help='defines path to input directory containing models')
+                        help='defines model files extension type')
 
     # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
+    parser.add_argument('-xx', '--x-data-extension',
+                        dest='x_data_extension',
                         required=True,
-                        help='defines path to input directory containing models')
+                        help='defines x_data files extension type')
 
     # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
+    parser.add_argument('-px', '--predictions-extension',
+                        dest='y_preds_extension',
                         required=True,
-                        help='defines path to input directory containing models')
-
-    # input models directory path
-    parser.add_argument('-i', '--input-path',
-                        dest='input_path',
-                        required=True,
-                        help='defines path to input directory containing models')
+                        help='defines prediction files extension type')
 
     # output folder
     parser.add_argument('-o', '--output-folder',
@@ -378,8 +378,23 @@ def main():
     # getting args dict
     args_dict = get_args_dict()
 
-    # getting input csv path
-    input_path = args_dict['input_path']
+    # getting model input path
+    models_input_path = args_dict['models_input_path']
+
+    # getting model input path
+    x_datas_input_path = args_dict['x_datas_input_path']
+
+    # getting model input path
+    y_preds_input_path = args_dict['y_preds_input_path']
+
+    # getting model input path
+    model_extension = args_dict['model_extension']
+
+    # getting model input path
+    x_data_extension = args_dict['x_data_extension']
+
+    # getting model input path
+    y_preds_extension = args_dict['y_preds_extension']
 
     # getting images extension
     output_folder = args_dict['output_folder']
@@ -391,7 +406,14 @@ def main():
     enter_to_continue()
 
     # running function to preprocess images in a folder
-    model_extract_rules(model_path=input_path)
+    models_extract_rules(models_folder_path=models_input_path,
+                         x_data_folder_path=x_datas_input_path,
+                         predictions_folder_path=y_preds_input_path,
+                         models_extension=model_extension,
+                         x_data_extension=x_data_extension,
+                         predictions_extension=y_preds_extension,
+                         output_folder=output_folder
+                         )
 
 
 ######################################################################
