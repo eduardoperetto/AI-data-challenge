@@ -4,6 +4,7 @@ import os
 import csv
 import joblib
 import te2rules
+import itertools
 import numpy as np
 import pandas as pd
 from os import system
@@ -107,6 +108,59 @@ def get_files_in_folder(path_to_folder: str,
 
 ########################################################################### auxiliary functions
 
+
+def make_running_df(models_folder_path:str,
+                    x_data_folder_path:str,
+                    predictions_folder_path:str,
+                    models_extension:str,
+                    x_data_extension:str,
+                    predictions_extension:str
+                    ) -> pd.DataFrame:
+    # getting model files in respective input folder
+    model_files = get_files_in_folder(path_to_folder=models_folder_path,
+                                      extension=models_extension)
+
+    # getting data files in respective input folder
+    x_data_files = get_files_in_folder(path_to_folder=x_data_folder_path,
+                                       extension=x_data_extension)
+
+    # getting prediction files in respective input folder
+    prediction_files = get_files_in_folder(path_to_folder=predictions_folder_path,
+                                           extension=predictions_extension)
+
+    # create list to append and organize files
+    model_dfs_list = []
+    x_data_dfs_list = []
+    prediction_dfs_list = []
+
+    for model_file, x_data_file, prediction_file in itertools.izip(model_files, x_data_files, prediction_files):
+        # make the file names into df so we can organize the runs
+        model_df = pd.DataFrame({'id': model_file.split('_')[0],
+                                 'type': model_file.split('_')[2],
+                                 'model_file': model_file})
+        x_data_df = pd.DataFrame({'id': x_data_file.split('_')[0],
+                                  'x_data_file': x_data_file})
+        prediction_df = pd.DataFrame({'id': prediction_file.split('_')[0],
+                                      'type': prediction_file.split('_')[2],
+                                      'prediction_file': prediction_file})
+
+        # append current rule df to dfs list
+        model_dfs_list.append(model_df)
+        x_data_dfs_list.append(x_data_df)
+        prediction_dfs_list.append(prediction_df)
+
+    # concatenating to have the full df
+    models_df = pd.concat(model_dfs_list, ignore_index=True)
+    x_data_dfs = pd.concat(x_data_dfs_list, ignore_index=True)
+    predictions_df = pd.concat(prediction_dfs_list, ignore_index=True)
+
+    # merging to make the triplets of model, x_data and predictions
+    model_pred_df = pd.merge(models_df, predictions_df, how="inner", on=["id", "type"])
+
+    triplet_df = pd.merge(model_pred_df, x_data_dfs, how="inner", on="id")
+
+    return triplet_df
+
 def model_extract_rules(model_path: str,
                         x_data_path: str,
                         y_pred_path: str) -> tuple:
@@ -151,33 +205,24 @@ def models_extract_rules(models_folder_path:str,
                          x_data_folder_path:str,
                          predictions_folder_path:str,
                          models_extension:str,
+                         x_data_extension:str,
+                         predictions_extension:str,
                          output_folder:str
                          ) -> None:
     """
-    given a directory containing models
+    given a directory containing models, a directory containing
+    the x_data and a directory containing the predictions
     returns a csv of extracted rules and fidelity metrics
+    of all models
     """
 
-    # getting model files in respective input folder
-    model_files = get_files_in_folder(path_to_folder=models_folder_path,
-                                      extension=models_extension)
-
-    # getting data files in respective input folder
-    x_data_files = get_files_in_folder(path_to_folder=x_data_folder_path,
-                                       extension=models_extension)
-
-    # getting prediction files in respective input folder
-    prediction_files = get_files_in_folder(path_to_folder=predictions_folder_path,
-                                      extension=models_extension)
-
-    # TODO: repeat for data and predictions to get the iterable triplets
-    for model_file in model_files:
-        model_df = pd.DataFrame({'model_id': model_file.split('_'),
-                                 'model_file': model_file})
-
-
-
-    # pair the triplets of model, x_data and predictions
+    triplet_df = make_running_df(models_folder_path=models_folder_path,
+                                 x_data_folder_path=x_data_folder_path,
+                                 predictions_folder_path=predictions_folder_path,
+                                 models_extension=models_extension,
+                                 x_data_extension=x_data_extension,
+                                 predictions_extension=predictions_extension
+                                 )
 
     # create empty list to hold the rule dfs
     rules_dfs_list = []
@@ -185,27 +230,34 @@ def models_extract_rules(models_folder_path:str,
     # create empty list to hold the rule dfs
     fidelity_dfs_list = []
 
-    # iterating over mask files
-    for file_index, model_file in enumerate(model_files, 1):
+    # iterating through df
+    for index, row in triplet_df.iterrows():
 
         # getting current model input path
         model_input_path = join(models_folder_path,
-                                model_file)
-
+                                row['model_file'])
+        # getting current x_data input path
+        x_data_input_path = join(x_data_folder_path,
+                                row['x_data_file'])
+        # getting current predictions input path
+        prediction_input_path = join(models_folder_path,
+                                row['prediction_file'])
         # get model rules df
-        rules_list,  fidelity, positive_fidelity, negative_fidelity = model_extract_rules(model_path=)
+        rules_list,  fidelity, positive_fidelity, negative_fidelity = model_extract_rules(model_path=model_input_path,
+                                                                                          x_data_path=x_data_input_path,
+                                                                                          y_pred_path=prediction_input_path)
 
         # converting list of rules into df
         rules_df = pd.DataFrame({'rules': rules_list})
 
         # registering model on rules df
-        rules_df['model'] = model_file
+        rules_df['model'] = row['model_file']
 
         # put fidelity metrics into dict
         extraction_metrics_dict = {'fidelity': fidelity,
                                    'positive_fidelity': positive_fidelity,
                                    'negative_fidelity': negative_fidelity,
-                                   'model': model_file
+                                   'model': row['model_file']
                                   }
 
         extraction_metrics_df = pd.DataFrame(extraction_metrics_dict, index=[0])
@@ -214,7 +266,7 @@ def models_extract_rules(models_folder_path:str,
         rules_dfs_list.append(rules_df)
 
         # append current fidelity df to dfs list
-        fidelity_dfs_list.append(extraction_metrics_dict)
+        fidelity_dfs_list.append(extraction_metrics_df)
 
     # concatenating "dfs" from dfs lists into
     # a pandas dataframe
@@ -222,7 +274,7 @@ def models_extract_rules(models_folder_path:str,
     models_rule_df = pd.concat(rules_dfs_list, ignore_index=True)
 
     # of the fidelities
-    models_rule_df = pd.concat(rules_dfs_list, ignore_index=True)
+    fidelities_df = pd.concat(fidelity_dfs_list, ignore_index=True)
 
     # create the path to save the files
     rules_output_path = join(output_folder,
@@ -249,7 +301,8 @@ def get_pdp_model(model_path: str,
     # load model
     model_data = joblib.load(model_path)
     model = model_data['model']
-    PartialDependenceDisplay.from_estimator(clf, X, features)
+    # TODO: partial dependence plots
+    # PartialDependenceDisplay.from_estimator(clf, X, features)
     pass
 #####################################################################
 # argument parsing related functions
@@ -267,7 +320,37 @@ def get_args_dict() -> dict:
 
     # adding arguments to parser
 
-    # input csv path
+    # input models directory path
+    parser.add_argument('-i', '--input-path',
+                        dest='input_path',
+                        required=True,
+                        help='defines path to input directory containing models')
+
+    # input models directory path
+    parser.add_argument('-i', '--input-path',
+                        dest='input_path',
+                        required=True,
+                        help='defines path to input directory containing models')
+
+    # input models directory path
+    parser.add_argument('-i', '--input-path',
+                        dest='input_path',
+                        required=True,
+                        help='defines path to input directory containing models')
+
+    # input models directory path
+    parser.add_argument('-i', '--input-path',
+                        dest='input_path',
+                        required=True,
+                        help='defines path to input directory containing models')
+
+    # input models directory path
+    parser.add_argument('-i', '--input-path',
+                        dest='input_path',
+                        required=True,
+                        help='defines path to input directory containing models')
+
+    # input models directory path
     parser.add_argument('-i', '--input-path',
                         dest='input_path',
                         required=True,
