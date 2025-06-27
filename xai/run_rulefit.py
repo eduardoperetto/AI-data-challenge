@@ -133,16 +133,16 @@ def make_running_df(models_folder_path:str,
     x_data_dfs_list = []
     prediction_dfs_list = []
 
-    for model_file, x_data_file, prediction_file in itertools.izip(model_files, x_data_files, prediction_files):
+    for model_file, x_data_file, prediction_file in zip(model_files, x_data_files, prediction_files):
         # make the file names into df so we can organize the runs
-        model_df = pd.DataFrame({'id': model_file.split('_')[0],
-                                 'type': model_file.split('_')[2],
-                                 'model_file': model_file})
-        x_data_df = pd.DataFrame({'id': x_data_file.split('_')[0],
-                                  'x_data_file': x_data_file})
-        prediction_df = pd.DataFrame({'id': prediction_file.split('_')[0],
-                                      'type': prediction_file.split('_')[2],
-                                      'prediction_file': prediction_file})
+        model_df = pd.DataFrame({'id': [model_file.split('_')[0]],
+                                 'type': [model_file.split('_')[2]],
+                                 'model_file': [model_file]})
+        x_data_df = pd.DataFrame({'id': [x_data_file.split('_')[0]],
+                                  'x_data_file': [x_data_file]})
+        prediction_df = pd.DataFrame({'id': [prediction_file.split('_')[0]],
+                                      'type': [prediction_file.split('_')[2]],
+                                      'prediction_file': [prediction_file]})
 
         # append current rule df to dfs list
         model_dfs_list.append(model_df)
@@ -180,7 +180,7 @@ def model_extract_rules(model_path: str,
     y_pred = pd.read_csv(y_pred_path)
 
     # get feature names
-    feature_names = model.feature_names_in_
+    feature_names = []
 
     # apply extraction
     model_explainer = ModelExplainer(model=model,
@@ -236,11 +236,12 @@ def models_extract_rules(models_folder_path:str,
         # getting current model input path
         model_input_path = join(models_folder_path,
                                 row['model_file'])
+
         # getting current x_data input path
         x_data_input_path = join(x_data_folder_path,
                                 row['x_data_file'])
         # getting current predictions input path
-        prediction_input_path = join(models_folder_path,
+        prediction_input_path = join(predictions_folder_path,
                                 row['prediction_file'])
         # get model rules df
         rules_list,  fidelity, positive_fidelity, negative_fidelity = model_extract_rules(model_path=model_input_path,
