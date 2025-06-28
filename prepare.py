@@ -26,14 +26,14 @@ INCLUDE_LAST_RATE_STD = True or RESULT_TO_DIFF_FROM_LAST
 ADD_TS = False
 ADD_TS_SIN_COS = False
 
-USE_TRACEROUTES = False # Usar dados de Traceroute
 USE_ONLY_FIRST_AND_LAST_TR = False # Usa apenas a 1a e ultima medicao TRACEROUTE em vez das 5 ultimas
 
+USE_TRACEROUTES = False # Usar dados de Traceroute
 USE_RTT = False # Usar dados de RTT
 
 ADD_MEAN_VALUES = True # Adiciona como features as médias dos valores de rate_mean e rate_std
 RESULT_TO_DIFF_FROM_AVG = False # Considerar o que o modelo deve encontrar como a diferença em relação à média (NECESSÁRIO USAR ADD_MEAN_VALUES)
-RESULT_TO_DIFF_FROM_LAST = False # Considerar o que o modelo deve encontrar como a diferença em relação à última medição
+RESULT_TO_DIFF_FROM_LAST = True # Considerar o que o modelo deve encontrar como a diferença em relação à última medição
 
 NORMALIZE = False # Aplicar normalização
 
