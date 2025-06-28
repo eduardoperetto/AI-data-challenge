@@ -107,14 +107,10 @@ def get_files_in_folder(path_to_folder: str,
     return files_in_dir
 
 ########################################################################### auxiliary functions
-
-
 def make_running_df(models_folder_path:str,
                     x_data_folder_path:str,
-                    predictions_folder_path:str,
                     models_extension:str,
-                    x_data_extension:str,
-                    predictions_extension:str
+                    x_data_extension:str
                     ) -> pd.DataFrame:
     # getting model files in respective input folder
     model_files = get_files_in_folder(path_to_folder=models_folder_path,
@@ -124,52 +120,94 @@ def make_running_df(models_folder_path:str,
     x_data_files = get_files_in_folder(path_to_folder=x_data_folder_path,
                                        extension=x_data_extension)
 
-    # getting prediction files in respective input folder
-    prediction_files = get_files_in_folder(path_to_folder=predictions_folder_path,
-                                           extension=predictions_extension)
-
     # create list to append and organize files
     model_dfs_list = []
     x_data_dfs_list = []
-    prediction_dfs_list = []
 
-    for model_file, x_data_file, prediction_file in zip(model_files, x_data_files, prediction_files):
+    for model_file, x_data_file in zip(model_files, x_data_files):
         # make the file names into df so we can organize the runs
         model_df = pd.DataFrame({'id': [model_file.split('_')[0]],
-                                 'type': [model_file.split('_')[2]],
                                  'model_file': [model_file]})
         x_data_df = pd.DataFrame({'id': [x_data_file.split('_')[0]],
                                   'x_data_file': [x_data_file]})
-        prediction_df = pd.DataFrame({'id': [prediction_file.split('_')[0]],
-                                      'type': [prediction_file.split('_')[2]],
-                                      'prediction_file': [prediction_file]})
 
         # append current rule df to dfs list
         model_dfs_list.append(model_df)
         x_data_dfs_list.append(x_data_df)
-        prediction_dfs_list.append(prediction_df)
 
     # concatenating to have the full df
     models_df = pd.concat(model_dfs_list, ignore_index=True)
     x_data_dfs = pd.concat(x_data_dfs_list, ignore_index=True)
-    predictions_df = pd.concat(prediction_dfs_list, ignore_index=True)
 
     # merging to make the triplets of model, x_data and predictions
-    model_pred_df = pd.merge(models_df, predictions_df, how="inner", on=["id", "type"])
+    paired_df = pd.merge(models_df, x_data_dfs, how="inner", on="id")
 
-    triplet_df = pd.merge(model_pred_df, x_data_dfs, how="inner", on="id")
+    return paired_df
 
-    return triplet_df
 
-def model_extract_rules(model_path: str,
-                        x_data_path: str,
-                        y_pred_path: str,
-                        ) -> tuple:
-    """
-    Given a string that is the path to a model,
-    returns its rules extracted
-    """
+# Defining function to extract rules from a decision tree
+def get_rules_tree(tree, feature_names):
+    tree_ = tree.tree_  # Getting the underlying tree structure
+    # Creating a list of feature names, replacing undefined features with a placeholder string
+    feature_name = [
+        feature_names[i] if i != _tree.TREE_UNDEFINED else "undefined!"
+        for i in tree_.feature
+    ]
 
+    paths = []  # List to store all the paths (rules) in the tree
+    path = []  # Temporary list to store the current path
+
+    # Recursive function to traverse the tree and collect rules
+    def recurse(node, path, paths):
+        # If the node is not a leaf node
+        if tree_.feature[node] != _tree.TREE_UNDEFINED:
+            name = feature_name[node]
+            threshold = tree_.threshold[node]
+            p1, p2 = list(path), list(path)
+            p1 += [f"({name} <= {np.round(threshold, 6)})"]
+            recurse(tree_.children_left[node], p1, paths)
+            p2 += [f"({name} > {np.round(threshold, 6)})"]
+            recurse(tree_.children_right[node], p2, paths)
+        else:
+            # Regression output is a single scalar value
+            value = float(tree_.value[node][0][0])
+            samples = int(tree_.n_node_samples[node])
+            path += [(value, samples)]
+            paths += [path]
+
+    # Starting the recursive function from the root node
+    recurse(0, path, paths)
+
+    # Sorting the paths based on the number of samples
+    samples_count = [p[-1][1] for p in paths]
+    ii = list(np.argsort(samples_count))
+    paths = [paths[i] for i in reversed(ii)]
+
+    rules = []  # List to store the rules in a formatted way
+    for path in paths:
+        rule = "if "
+
+        for p in path[:-1]:
+            if rule != "if ":
+                rule += " and "
+            rule += str(p)
+
+        predicted_value = path[-1][0]
+        samples = path[-1][1]
+
+        # Appending the formatted rule to the rules list
+        rules.append({
+            'rule': rule,
+            'prediction': predicted_value,
+            'samples': samples
+        })
+
+    return rules
+
+
+def get_rules_forest(model_path:str,
+                     x_data_path:str
+                     )-> pd.DataFrame:
     # load model
     model_data = joblib.load(model_path)
     model = model_data['model']
@@ -177,36 +215,30 @@ def model_extract_rules(model_path: str,
     # load x data
     x_data = pd.read_csv(x_data_path)
 
-    # feature_names
-    feature_names = ['rates_mean', 'dash_last_rate', 'rates_stdev', 'dash0_rate_mean', 'dash_last_rate_std']
-    # load predictions
-    y_pred = pd.read_csv(y_pred_path)
+    # Getting feature names from the DataFrame df_train, excluding the target variable column
+    feature_names = x_data.columns
 
-    # apply extraction
-    model_explainer = ModelExplainer(model=model,
-                                     feature_names=feature_names,
-                                     verbose=True
-                                    )
+    # Creating an empty list to store the rules from each tree
+    rules_list = []
 
-    rules_list = model_explainer.explain(X=x_data,
-                                         y=y_pred,
-                                         num_stages=10,  # stages can be between 1 and max_depth
-                                         min_precision=0.95,  # higher min_precision can result in rules with more terms overfit on training data
-                                         jaccard_threshold=0.5  # lower jaccard_threshold speeds up the rule exploration, but can miss some good rules
-                                        )
+    # Iterating through each decision tree in the random forest to collect rules
+    for tree in model.estimators_:
+        rules = get_rules_tree(tree, feature_names)
+        rules_list.extend(rules)
 
+    # Converting the list of dictionaries into a DataFrame
+    rules_df = pd.DataFrame(rules_list)
 
-    fidelity, positive_fidelity, negative_fidelity = model_explainer.get_fidelity()
+    rules_df.reset_index(drop=True, inplace=True)
 
-    return rules_list, fidelity, positive_fidelity, negative_fidelity
+    return rules_df
+
 
 
 def models_extract_rules(models_folder_path:str,
                          x_data_folder_path:str,
-                         predictions_folder_path:str,
                          models_extension:str,
                          x_data_extension:str,
-                         predictions_extension:str,
                          output_folder:str
                          ) -> None:
     """
@@ -216,22 +248,17 @@ def models_extract_rules(models_folder_path:str,
     of all models
     """
 
-    triplet_df = make_running_df(models_folder_path=models_folder_path,
+    paired_df = make_running_df(models_folder_path=models_folder_path,
                                  x_data_folder_path=x_data_folder_path,
-                                 predictions_folder_path=predictions_folder_path,
                                  models_extension=models_extension,
-                                 x_data_extension=x_data_extension,
-                                 predictions_extension=predictions_extension
+                                 x_data_extension=x_data_extension
                                  )
 
     # create empty list to hold the rule dfs
     rules_dfs_list = []
 
-    # create empty list to hold the rule dfs
-    fidelity_dfs_list = []
-
     # iterating through df
-    for index, row in triplet_df.iterrows():
+    for index, row in paired_df.iterrows():
 
         # getting current model input path
         model_input_path = join(models_folder_path,
@@ -240,53 +267,29 @@ def models_extract_rules(models_folder_path:str,
         # getting current x_data input path
         x_data_input_path = join(x_data_folder_path,
                                 row['x_data_file'])
-        # getting current predictions input path
-        prediction_input_path = join(predictions_folder_path,
-                                row['prediction_file'])
-        # get model rules df
-        rules_list,  fidelity, positive_fidelity, negative_fidelity = model_extract_rules(model_path=model_input_path,
-                                                                                          x_data_path=x_data_input_path,
-                                                                                          y_pred_path=prediction_input_path,
-                                                                                          )
 
-        # converting list of rules into df
-        rules_df = pd.DataFrame({'rules': rules_list})
+        # get model rules df
+        rules_df = get_rules_forest(model_path=model_input_path,
+                                    x_data_path=x_data_input_path
+                                    )
 
         # registering model on rules df
         rules_df['model'] = row['model_file']
 
-        # put fidelity metrics into dict
-        extraction_metrics_dict = {'fidelity': fidelity,
-                                   'positive_fidelity': positive_fidelity,
-                                   'negative_fidelity': negative_fidelity,
-                                   'model': row['model_file']
-                                  }
-
-        extraction_metrics_df = pd.DataFrame(extraction_metrics_dict, index=[0])
-
         # append current rule df to dfs list
         rules_dfs_list.append(rules_df)
-
-        # append current fidelity df to dfs list
-        fidelity_dfs_list.append(extraction_metrics_df)
 
     # concatenating "dfs" from dfs lists into
     # a pandas dataframe
     # of the rules
     models_rule_df = pd.concat(rules_dfs_list, ignore_index=True)
 
-    # of the fidelities
-    fidelities_df = pd.concat(fidelity_dfs_list, ignore_index=True)
-
     # create the path to save the files
     rules_output_path = join(output_folder,
                        'models_rules.csv')
-    fidelity_output_path = join(output_folder,
-                       'models_fidelities.csv')
 
     # saving dfs
     models_rule_df.to_csv(rules_output_path)
-    models_rule_df.to_csv(fidelity_output_path)
 
     # printing execution message
     print(f'output saved to {output_folder}')
@@ -334,12 +337,6 @@ def get_args_dict() -> dict:
                         required=True,
                         help='defines path to input directory containing the x_data')
 
-    # input predictions directory path
-    parser.add_argument('-y', '--y-preds-input-path',
-                        dest='y_preds_input_path',
-                        required=True,
-                        help='defines path to input directory containing the predictions')
-
     # input models directory path
     parser.add_argument('-mx', '--model-extension',
                         dest='model_extension',
@@ -351,12 +348,6 @@ def get_args_dict() -> dict:
                         dest='x_data_extension',
                         required=True,
                         help='defines x_data files extension type')
-
-    # input models directory path
-    parser.add_argument('-px', '--predictions-extension',
-                        dest='y_preds_extension',
-                        required=True,
-                        help='defines prediction files extension type')
 
     # output folder
     parser.add_argument('-o', '--output-folder',
@@ -387,16 +378,10 @@ def main():
     x_datas_input_path = args_dict['x_datas_input_path']
 
     # getting model input path
-    y_preds_input_path = args_dict['y_preds_input_path']
-
-    # getting model input path
     model_extension = args_dict['model_extension']
 
     # getting model input path
     x_data_extension = args_dict['x_data_extension']
-
-    # getting model input path
-    y_preds_extension = args_dict['y_preds_extension']
 
     # getting images extension
     output_folder = args_dict['output_folder']
@@ -410,13 +395,10 @@ def main():
     # running function to preprocess images in a folder
     models_extract_rules(models_folder_path=models_input_path,
                          x_data_folder_path=x_datas_input_path,
-                         predictions_folder_path=y_preds_input_path,
                          models_extension=model_extension,
                          x_data_extension=x_data_extension,
-                         predictions_extension=y_preds_extension,
                          output_folder=output_folder
                          )
-
 
 ######################################################################
 # running main function
