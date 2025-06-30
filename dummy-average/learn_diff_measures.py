@@ -85,7 +85,7 @@ def evaluate_predictions(data_df):
                 y_true_actual[non_zero_mask],
                 y_pred_actual[non_zero_mask]
             )
-            print(f"MAPE for {name} (comparing absolute values): {mape * 100:.2f}%")
+            print(f"MAPE for {name} (comparing absolute values): {mape * 100:.5f}%")
             mape_results[name] = mape
         else:
             print(f"MAPE for {name}: All true values are zero, cannot calculate MAPE.")

@@ -9,12 +9,11 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.model_selection import GridSearchCV, train_test_split
 
-# --- As suas flags foram mantidas ---
 USING_RESULT_AS_DIFF_FROM_LAST = True
-CONSIDERING_RTT_TR = True
+CONSIDERING_RTT_TR = False
 
 # --- Caminhos e nomes de arquivos atualizados para RuleFit ---
-BEST_PARAMS_RULEFIT_PATH = "best_params_rulefit.joblib" if CONSIDERING_RTT_TR else "best_params_rulefit_wortt.joblib"
+BEST_PARAMS_RULEFIT_PATH = "best_params_rulefit_gb.joblib" if CONSIDERING_RTT_TR else "best_params_rulefit_gb_wortt.joblib"
 
 def load_best_params_rulefit():
     """Carrega os melhores parâmetros para o RuleFit de um arquivo joblib."""
@@ -40,7 +39,7 @@ def split_data(X, y, seed):
 def create_main_output_folder():
     """Cria a pasta principal de saída para os resultados do RuleFit."""
     base_or_enriched = 'enriched' if CONSIDERING_RTT_TR else 'base'
-    folder = os.path.join("output", "saving_csv", base_or_enriched, "RuleFit", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    folder = os.path.join("output", "saving_csv", base_or_enriched, "rulefit_gb", datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(folder, exist_ok=True)
     return folder
 
@@ -53,14 +52,9 @@ def get_best_params_for_column_rulefit(X_train, y_train, feature_names, seed, co
     gbr = GradientBoostingRegressor(random_state=seed)
     rf_model = RuleFit(tree_generator=gbr, random_state=seed)
     
-    # --- CORREÇÃO PRINCIPAL AQUI ---
-    # O parâmetro 'Cs' espera um INTEIRO (número de alphas), não um float.
     param_grid = {
-        # 'Cs' é o número de alphas a serem testados pelo LassoCV. Deve ser um inteiro.
         "Cs": [100, 500], 
         "max_rules": [100, 500],
-        
-        # Parâmetros do GradientBoostingRegressor
         "tree_generator__n_estimators": [100, 500],
         "tree_generator__max_depth": [3, 5],
         "tree_generator__learning_rate": [0.01, 0.1],
@@ -118,7 +112,7 @@ def evaluate_model(model, X_test, y_test, idx_last_rate, idx_last_rate_std, csv_
     return mean_absolute_percentage_error(y_test, y_pred)
 
 def rule_importance_string(model):
-    """Extrai e formata as regras mais importantes do RuleFit."""
+    """Extrai e formata as regras mais importantes (top 20) para o CSV."""
     rules = model.get_rules()
     rules = rules[rules.coef != 0].sort_values("importance", ascending=False)
     
@@ -129,14 +123,38 @@ def rule_importance_string(model):
     rules['rule_cleaned'] = rules['rule'].str.replace('\n', ' ').str.replace(';', ',')
     
     return "<>".join([
-        f"{row.rule_cleaned} (type={row.type}, coef={row.coef:.4f}, imp={row.importance:.4f})"
+        f"{row.rule_cleaned} (type={row.type}, coef={row.coef:.4f}, sup={row.support:.2f}, imp={row.importance:.4f})"
         for _, row in rules.iterrows()
     ])
+
+def save_full_rule_importance_to_txt(model, target_name, folder_path):
+    """
+    Extrai todas as regras com coeficientes não nulos do modelo RuleFit
+    e as salva em um arquivo .txt formatado.
+    """
+    # 1. Obter as regras
+    rules_df = model.get_rules()
+
+    # 2. Filtrar por regras e features com coeficiente não nulo e ordenar por importância
+    important_rules_df = rules_df[rules_df['coef'] != 0].sort_values(by="importance", ascending=False)
+
+    # 3. Construir o caminho do arquivo
+    file_name = f"{target_name}_rule_importance.txt"
+    file_path = os.path.join(folder_path, file_name)
+
+    # 4. Salvar o DataFrame em um arquivo de texto
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(f"Relatório Completo de Regras e Importância para o Alvo: {target_name}\n")
+        f.write("="*80 + "\n")
+        # Usar to_string() para uma saída bem formatada, sem truncar
+        f.write(important_rules_df.to_string())
+
+    print(f"Relatório completo de regras salvo em: {file_path}")
+
 
 def save_csv(csv_path, line):
     """Salva uma linha de resultados no arquivo CSV, criando o cabeçalho se necessário."""
     exists = os.path.exists(csv_path)
-    # O cabeçalho está correto, pois o nome do parâmetro é 'Cs'.
     header = "Model;MeanOrStd?;ConsiderRTT_TR?;MAPE;Seed;RuleImportance;MaxRules;Cs;NumEstimators;MaxDepth;LearningRate;Subsample;TrainTime\n"
     with open(csv_path, "a" if exists else "w", encoding="utf-8") as f:
         if not exists:
@@ -152,11 +170,16 @@ def execute_rulefit_training_by_column(X_train, X_test, y_train, y_test, feature
     model.fit(X_train, y_train, feature_names=feature_names)
     fit_time = time.perf_counter() - start_fit
     
+    # --- CHAMADA DA NOVA FUNÇÃO ---
+    # Salva o relatório completo de regras em um arquivo .txt separado
+    column_name = csv_name.replace('.csv', '')
+    save_full_rule_importance_to_txt(model, column_name, folder)
+    
     mape = evaluate_model(model, X_test, y_test, idx_last_rate, idx_last_rate_std, csv_name)
     feats = rule_importance_string(model)
     
     line = ";".join([
-        "RuleFit",
+        "RuleFit_GB",
         csv_name.replace(".csv", ""),
         str(CONSIDERING_RTT_TR),
         f"{mape:.6f}",
@@ -173,7 +196,6 @@ def execute_rulefit_training_by_column(X_train, X_test, y_train, y_test, feature
     
     save_csv(os.path.join(folder, csv_name), line)
     
-    column_name = csv_name.replace('.csv', '')
     save_model(model, column_name, seed, mape, folder)
 
 def save_model(model, column, seed, mape, folder):
@@ -246,6 +268,7 @@ def loop_exec(n):
         print("-" * 50)
         seed_folder = os.path.join(main_folder, str(seed))
         os.makedirs(seed_folder, exist_ok=True)
+        # Passando a pasta da seed para a função run_once
         run_once(seed_folder, seed)
     
     print("\n" + "=" * 50)
