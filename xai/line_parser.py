@@ -108,51 +108,95 @@ def get_files_in_folder(path_to_folder: str,
     return files_in_dir
 
 ########################################################################### auxiliary functions
-def parse_line(line):
+def clean_line(line: str) -> str:
     """
-    this function takes a line (str) based on the rulefit algorithm output
-    and parse it to obtain a dictionary of the information wanted
+    Given a parsed txt line,
+    returns clean line.
     """
-    match = re.match(r"^(.*) \(type=(linear|rule), coef=([-\d.eE]+), imp=([-\d.eE]+)\)$", line.strip())
-    if match:
-        feature = match.group(1)
-        type_ = match.group(2)
-        coef = float(match.group(3))
-        imp = float(match.group(4))
-        return {"rule": feature, "type": type_, "coefficient": coef, "importance": imp}
-    else:
-        print(f"Warning: line did not match expected format:\n{line}")
-        return None
+    # getting clean line
+    line = " ".join(line.split())
 
-def convert_txt_to_csv(input_txt_path,
-                       output_csv_path
-                       ) -> None:
+    # returning clean line
+    return line
+
+
+def txt_to_csv(input_path: str,
+               output_path: str
+               ) -> None:
     """
-    this function takes a .txt file path and
-    parses it to convert it into a .csv
+    Given a weird ass text file, parses
+    lines, and saves file as .csv.
     """
-    # reading txt file
-    with open(input_txt_path, 'r') as file:
-        lines = file.readlines()
+    # defining placeholder for parsed lines
+    parsed_lines = []
 
-    # parsing file lines
-    parsed = [parse_line(line) for line in lines]
-    parsed = [p for p in parsed if p is not None]
+    # reading file
+    with open(input_path, 'r') as open_file:
 
-    # turning output dict into df
-    df = pd.DataFrame(parsed)
+        # reading lines
+        lines = open_file.readlines()
 
-    # sorting dataframe by rule importance
-    df.sort_values(by="importance", ascending=False, inplace=True)
+        # iterating over lines
+        for line_index, line in enumerate(lines):
 
-    # saving output df
-    df.to_csv(output_csv_path, index=False)
-    print(f"CSV written to: {output_csv_path}")
+            # cleaning line
+            line = clean_line(line=line)
+
+            # checking line index
+            if line_index == 0:  # means it's header (no need to remove index)
+
+                # splitting line
+                line_split = line.split()
+
+                # assembling parsed line (joining by comma)
+                parsed_line = ','.join(line_split)
+
+                # adding enter to end of line
+                parsed_line += '\n'
+
+                # appending current line to parsed lines
+                parsed_lines.append(parsed_line)
+
+            else:  # means it's not header (needs to remove index)
+
+                # splitting line
+                line_split = line.split()
+
+                # discarding index
+                line_split = line_split[1:]
+
+                # getting last four elements (no spaces within elements)
+                line_end = line_split[-4:]
+
+                # getting first elements (might contain spaces within element)
+                line_start = line_split[:-4]
+
+                # joining elements from line start (joining by space)
+                line_start = ' '.join(line_start)
+
+                # assembling line list
+                line_list = [line_start]
+                line_list.extend(line_end)
+
+                # assembling parsed line (joining by comma)
+                parsed_line = ','.join(line_list)
+
+                # adding enter to end of line
+                parsed_line += '\n'
+
+                # appending current line to parsed lines
+                parsed_lines.append(parsed_line)
+
+    # writing file
+    with open(output_path, 'w') as open_file:
+
+        # writing lines
+        open_file.writelines(parsed_lines)
 
 
-def make_models_rule_df(rules_folder_path:str,
-                        rule_file_extension:str,
-                        output_folder:str
+def make_models_rule_df(input_folder_path:str,
+                        file_extension:str,
+                        output_folder_path:str
                         ) -> None:
     """
     given a directory containing models, a directory containing
@@ -162,40 +206,28 @@ def make_models_rule_df(rules_folder_path:str,
     """
 
     # getting model files in respective input folder
-    rule_files = get_files_in_folder(path_to_folder=rules_folder_path,
-                                     extension=rule_file_extension)
+    rule_files = get_files_in_folder(path_to_folder=input_folder_path,
+                                     extension=file_extension)
 
     # iterating through df
     for rule_file in rule_files:
 
         # getting current model input path
-        rules_input_path = join(rules_folder_path,
+        rules_input_path = join(input_folder_path,
                                 rule_file)
 
         # create a model id to trace from which csv it came from
         model_id = rule_file.split('_')[0]
 
         # create the path to save the files
-        rules_output_path = join(output_folder,
-                                 f'{model_id}_parsed_output.csv')
+        output_path = join(output_folder_path,
+                           f'{model_id}_parsed_output.csv')
 
         # run parser in file
-        convert_txt_to_csv(rules_input_path, rules_output_path)
+        txt_to_csv(rules_input_path, output_path)
 
     return
 
-
-def get_pdp_model(model_path: str,
-                  data_x: pd.DataFrame):
-    """
-    plot and save partial dependence plots for features
-    """
-    # load model
-    model_data = joblib.load(model_path)
-    model = model_data['model']
-    # TODO: partial dependence plots
-    # PartialDependenceDisplay.from_estimator(clf, X, features)
-    pass
 #####################################################################
 # argument parsing related functions
 
@@ -262,9 +294,9 @@ def main():
     enter_to_continue()
 
     # running function to preprocess images in a folder
-    make_models_rule_df(rules_folder_path=input_folder,
-                        rule_file_extension=files_extension,
-                        output_folder=output_folder)
+    make_models_rule_df(input_folder_path=input_folder,
+                        file_extension=files_extension,
+                        output_folder_path=output_folder)
 
 ######################################################################
 # running main function
